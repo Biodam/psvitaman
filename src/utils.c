@@ -56,8 +56,39 @@ void utils_safe_strncpy(char *dest, const char *src, size_t max_len) {
         dest[0] = '\0';
         return;
     }
-    size_t len = strlen(src);
-    if (len >= max_len) len = max_len - 1;
-    memcpy(dest, src, len);
-    dest[len] = '\0';
+
+    size_t j = 0;
+    for (size_t i = 0; src[i] != '\0' && j + 1 < max_len; ) {
+        unsigned char c = (unsigned char)src[i];
+        if (c >= 32 && c <= 126) {
+            /* Standard safe ASCII printable characters */
+            dest[j++] = (char)c;
+            i++;
+        } else if (c == '\t') {
+            dest[j++] = ' ';
+            i++;
+        } else if (c >= 0xC0 && c <= 0xDF) {
+            /* 2-byte UTF-8 sequence */
+            i += 1;
+            if (src[i] != '\0') i++;
+            dest[j++] = '?';
+        } else if (c >= 0xE0 && c <= 0xEF) {
+            /* 3-byte UTF-8 sequence */
+            i += 1;
+            if (src[i] != '\0') i++;
+            if (src[i] != '\0') i++;
+            dest[j++] = ' ';
+        } else if (c >= 0xF0) {
+            /* 4-byte UTF-8 sequence (emojis) */
+            i += 1;
+            if (src[i] != '\0') i++;
+            if (src[i] != '\0') i++;
+            if (src[i] != '\0') i++;
+            dest[j++] = ' ';
+        } else {
+            /* Control characters < 32 or stray bytes */
+            i++;
+        }
+    }
+    dest[j] = '\0';
 }

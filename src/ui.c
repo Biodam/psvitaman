@@ -237,8 +237,8 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     if (s_font) {
         /* Vintage cassette brand typography */
         vita2d_pgf_draw_text(s_font, (int)(lx + 16), (int)(ly + 32), COLOR_LABEL_RED, 0.85f, "A");
-        vita2d_pgf_draw_text(s_font, (int)(lx + 36), (int)(ly + 32), COLOR_LABEL_TEXT, 0.75f, "PSVITAMAN • C-90 HIGH BIAS");
-        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 140), (int)(ly + 32), COLOR_LABEL_TEXT, 0.70f, "STEREO • 120µs");
+        vita2d_pgf_draw_text(s_font, (int)(lx + 36), (int)(ly + 32), COLOR_LABEL_TEXT, 0.75f, "PSVITAMAN - C-90 HIGH BIAS");
+        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 140), (int)(ly + 32), COLOR_LABEL_TEXT, 0.70f, "STEREO - 120us");
 
         /* Track Title Label with Marquee Scrolling */
         const char *track_title = (strlen(state->track_name) > 0) ? state->track_name : "Playback Idle / Stopped";
@@ -266,7 +266,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         char artist_album[600] = {0};
         if (strlen(state->artist_name) > 0) {
             if (strlen(state->album_name) > 0) {
-                snprintf(artist_album, sizeof(artist_album), "%s — %s", state->artist_name, state->album_name);
+                snprintf(artist_album, sizeof(artist_album), "%s - %s", state->artist_name, state->album_name);
             } else {
                 utils_safe_strncpy(artist_album, state->artist_name, sizeof(artist_album));
             }
@@ -338,7 +338,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         char cur_time[16], total_time[16], time_hud[40];
         utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
         utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
-        snprintf(time_hud, sizeof(time_hud), "⏱ %s / %s", cur_time, total_time);
+        snprintf(time_hud, sizeof(time_hud), "%s / %s", cur_time, total_time);
         vita2d_pgf_draw_text(s_font, (int)(hx + 14), (int)(hy + 30), COLOR_TEXT_GREEN, 0.90f, time_hud);
 
         /* Volume Display */
@@ -406,7 +406,7 @@ static void render_setup_guide(const AppConfig *config) {
     draw_beveled_box(40, 20, 880, 504, RGBA8(26, 30, 40, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
 
     if (s_font) {
-        vita2d_pgf_draw_text(s_font, 70, 56, COLOR_TEXT_GREEN, 1.25f, "PSVITAMAN • SPOTIFY SETUP & PAIRING");
+        vita2d_pgf_draw_text(s_font, 70, 56, COLOR_TEXT_GREEN, 1.25f, "PSVITAMAN - SPOTIFY SETUP & PAIRING");
         vita2d_pgf_draw_text(s_font, 70, 80, COLOR_TEXT_MUTED, 0.75f, "Scan the QR code with your phone camera to pair your Spotify account");
         vita2d_draw_line(60, 92, 900, 92, COLOR_BORDER_LIGHT);
     }
@@ -460,13 +460,13 @@ static void render_setup_guide(const AppConfig *config) {
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 105), COLOR_TEXT_WHITE, 0.85f,
                              "2. Scan the QR code to open Spotify Authorization.");
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 140), COLOR_TEXT_WHITE, 0.85f,
-                             "3. Log in & tap 'Agree' — your phone sends the token.");
+                             "3. Log in & tap 'Agree' -> your phone sends the token.");
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 175), COLOR_TEXT_WHITE, 0.85f,
                              "4. PSVitaman detects the token and starts playback!");
 
         /* Status Mini-Panel */
         draw_beveled_box(rx + 20, ry + 215, rw - 40, 110, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
-        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 242), COLOR_TEXT_GREEN, 0.85f, "• PAIRING SERVER: Active on port 8888");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 242), COLOR_TEXT_GREEN, 0.85f, "[+] PAIRING SERVER: Active on port 8888");
 
         char ip_label[128];
         if (has_ip) {

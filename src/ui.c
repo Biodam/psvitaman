@@ -4,6 +4,7 @@
 
 #include "ui.h"
 #include "utils.h"
+#include "qrcodegen.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -355,41 +356,162 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     }
 }
 
+static void draw_qr_code(float start_x, float start_y, const char *text, int max_pixel_size) {
+    if (!text || strlen(text) == 0) return;
+
+    uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+    uint8_t tempBuffer[qrcodegen_BUFFER_LEN_MAX];
+
+    bool ok = qrcodegen_encodeText(text, tempBuffer, qrcode, qrcodegen_Ecc_LOW,
+                                   qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+                                   qrcodegen_Mask_AUTO, true);
+    if (!ok) return;
+
+    int qr_modules = qrcodegen_getSize(qrcode);
+    int module_px = max_pixel_size / qr_modules;
+    if (module_px < 2) module_px = 2;
+
+    int total_qr_px = qr_modules * module_px;
+    int quiet_zone = 10;
+
+    /* White card background with quiet zone */
+    vita2d_draw_rectangle(start_x - quiet_zone, start_y - quiet_zone,
+                          total_qr_px + quiet_zone * 2, total_qr_px + quiet_zone * 2,
+                          RGBA8(255, 255, 255, 255));
+
+    /* Outline border */
+    vita2d_draw_line(start_x - quiet_zone, start_y - quiet_zone, start_x + total_qr_px + quiet_zone, start_y - quiet_zone, RGBA8(180, 185, 195, 255));
+    vita2d_draw_line(start_x - quiet_zone, start_y + total_qr_px + quiet_zone, start_x + total_qr_px + quiet_zone, start_y + total_qr_px + quiet_zone, RGBA8(180, 185, 195, 255));
+    vita2d_draw_line(start_x - quiet_zone, start_y - quiet_zone, start_x - quiet_zone, start_y + total_qr_px + quiet_zone, RGBA8(180, 185, 195, 255));
+    vita2d_draw_line(start_x + total_qr_px + quiet_zone, start_y - quiet_zone, start_x + total_qr_px + quiet_zone, start_y + total_qr_px + quiet_zone, RGBA8(180, 185, 195, 255));
+
+    /* Render dark modules */
+    for (int y = 0; y < qr_modules; y++) {
+        for (int x = 0; x < qr_modules; x++) {
+            if (qrcodegen_getModule(qrcode, x, y)) {
+                vita2d_draw_rectangle(start_x + x * module_px,
+                                      start_y + y * module_px,
+                                      module_px, module_px,
+                                      RGBA8(18, 22, 30, 255));
+            }
+        }
+    }
+}
+
 static void render_setup_guide(const AppConfig *config) {
-    (void)config;
-    /* Walkman styled setup walkthrough for missing credentials */
+    /* Walkman styled setup walkthrough with dynamic QR code */
     vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_CHASSIS_BG);
 
-    draw_beveled_box(80, 40, SCREEN_WIDTH - 160, SCREEN_HEIGHT - 80,
-                    RGBA8(30, 36, 48, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
+    draw_beveled_box(40, 20, 880, 504, RGBA8(26, 30, 40, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
 
     if (s_font) {
-        vita2d_pgf_draw_text(s_font, 120, 95, COLOR_TEXT_GREEN, 1.4f, "PSVITAMAN • SPOTIFY REMOTE");
-        vita2d_pgf_draw_text(s_font, 120, 130, COLOR_TEXT_AMBER, 1.0f, "Initial Configuration Required");
+        vita2d_pgf_draw_text(s_font, 70, 56, COLOR_TEXT_GREEN, 1.25f, "PSVITAMAN • SPOTIFY SETUP & PAIRING");
+        vita2d_pgf_draw_text(s_font, 70, 80, COLOR_TEXT_MUTED, 0.75f, "Scan the QR code with your phone camera to authorize Spotify remote control");
+        vita2d_draw_line(60, 92, 900, 92, COLOR_BORDER_LIGHT);
+    }
 
-        vita2d_pgf_draw_text(s_font, 120, 175, COLOR_TEXT_WHITE, 0.85f,
-                             "A template configuration file was automatically created at:");
-        vita2d_pgf_draw_text(s_font, 140, 205, COLOR_TEXT_GREEN, 0.85f,
+    /* Format QR Code Target URL */
+    char qr_target_url[512] = {0};
+    if (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL) {
+        snprintf(qr_target_url, sizeof(qr_target_url),
+                 "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
+                 config->client_id);
+    } else {
+        snprintf(qr_target_url, sizeof(qr_target_url), "https://developer.spotify.com/dashboard");
+    }
+
+    /* Left Column: QR Code Card */
+    float qx = 65, qy = 108, qw = 315, qh = 390;
+    draw_beveled_box(qx, qy, qw, qh, RGBA8(32, 38, 50, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
+
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(qx + 48), (int)(qy + 30), COLOR_TEXT_GREEN, 0.90f, "SCAN TO PAIR PHONE");
+    }
+
+    /* Render on-screen QR Code */
+    draw_qr_code(qx + 52, qy + 48, qr_target_url, 210);
+
+    if (s_font) {
+        bool has_client_id = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL);
+        const char *badge = has_client_id ? "Direct Spotify OAuth Link" : "Spotify Developer Portal";
+        int bw = vita2d_pgf_text_width(s_font, 0.75f, badge);
+        vita2d_pgf_draw_text(s_font, (int)(qx + (qw - bw) / 2), (int)(qy + 295), COLOR_TEXT_AMBER, 0.75f, badge);
+        vita2d_pgf_draw_text(s_font, (int)(qx + 35), (int)(qy + 325), COLOR_TEXT_WHITE, 0.72f, "Point phone camera at QR code");
+        vita2d_pgf_draw_text(s_font, (int)(qx + 30), (int)(qy + 350), COLOR_TEXT_MUTED, 0.70f, "Tap the notification to open link");
+        vita2d_pgf_draw_text(s_font, (int)(qx + 45), (int)(qy + 375), COLOR_TEXT_GREEN, 0.70f, "[SELECT] Toggle Target URL");
+    }
+
+    /* Right Column: Setup Instructions Card */
+    float rx = 395, ry = 108, rw = 505, rh = 390;
+    draw_beveled_box(rx, ry, rw, rh, RGBA8(32, 38, 50, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
+
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 32), COLOR_TEXT_GREEN, 1.0f, "SETUP INSTRUCTIONS");
+
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 70), COLOR_TEXT_WHITE, 0.85f,
+                             "1. Scan the QR code to open Spotify Authorization.");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 105), COLOR_TEXT_WHITE, 0.85f,
+                             "2. Log in and tap 'Agree' to authorize PSVitaman.");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 140), COLOR_TEXT_WHITE, 0.85f,
+                             "3. Save credentials into the configuration file:");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 45), (int)(ry + 168), COLOR_TEXT_GREEN, 0.85f,
                              "ux0:data/psvitaman/config.ini");
 
-        vita2d_pgf_draw_text(s_font, 120, 245, COLOR_TEXT_WHITE, 0.85f,
-                             "To connect your Spotify account:");
-        vita2d_pgf_draw_text(s_font, 140, 275, COLOR_TEXT_MUTED, 0.80f,
-                             "1. Create a free app at https://developer.spotify.com/dashboard");
-        vita2d_pgf_draw_text(s_font, 140, 305, COLOR_TEXT_MUTED, 0.80f,
-                             "2. Set Redirect URI to: http://127.0.0.1:8888/callback");
-        vita2d_pgf_draw_text(s_font, 140, 335, COLOR_TEXT_MUTED, 0.80f,
-                             "3. Run 'python tools/get_token.py' on PC to generate your refresh_token.");
-        vita2d_pgf_draw_text(s_font, 140, 365, COLOR_TEXT_MUTED, 0.80f,
-                             "4. Copy your credentials into ux0:data/psvitaman/config.ini via VitaShell.");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 205), COLOR_TEXT_MUTED, 0.80f,
+                             "Tip: You can also run 'python tools/get_token.py' on PC");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 45), (int)(ry + 230), COLOR_TEXT_MUTED, 0.80f,
+                             "to generate your refresh_token automatically in 60s.");
 
-        vita2d_pgf_draw_text(s_font, 120, 420, COLOR_TEXT_GREEN, 0.90f,
-                             "Press [START] on your Vita to reload config once updated.");
+        /* Status Mini-Panel */
+        draw_beveled_box(rx + 20, ry + 265, rw - 40, 68, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
+        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 292), COLOR_LABEL_RED, 0.80f, "• STATUS: Configuration required");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 318), COLOR_TEXT_MUTED, 0.75f, "Edit config.ini via VitaShell USB/FTP");
+
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 368), COLOR_TEXT_GREEN, 0.90f,
+                             "Press [START] on Vita to reload config once saved.");
+    }
+}
+
+static void render_qr_overlay(const AppConfig *config) {
+    /* Semi-transparent dark backdrop overlay */
+    vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, RGBA8(12, 15, 22, 225));
+
+    /* Centered Modal Card */
+    float mx = 230, my = 30, mw = 500, mh = 484;
+    draw_beveled_box(mx, my, mw, mh, RGBA8(28, 34, 46, 255), COLOR_BTN_ACTIVE, COLOR_BORDER_DARK);
+
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(mx + 115), (int)(my + 38), COLOR_TEXT_GREEN, 1.15f, "PHONE PAIRING & CONNECT");
+        vita2d_draw_line(mx + 20, my + 52, mx + mw - 20, my + 52, COLOR_BORDER_LIGHT);
+    }
+
+    char qr_url[512] = {0};
+    if (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL) {
+        snprintf(qr_url, sizeof(qr_url),
+                 "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
+                 config->client_id);
+    } else {
+        snprintf(qr_url, sizeof(qr_url), "https://developer.spotify.com/dashboard");
+    }
+
+    /* Draw Centered QR Code */
+    draw_qr_code(mx + 140, my + 72, qr_url, 220);
+
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(mx + 60), (int)(my + 345), COLOR_TEXT_WHITE, 0.85f,
+                             "Scan with your phone to open Spotify controls");
+        vita2d_pgf_draw_text(s_font, (int)(mx + 90), (int)(my + 375), COLOR_TEXT_AMBER, 0.80f,
+                             "Target: Spotify Web API OAuth Portal");
+
+        draw_beveled_box(mx + 40, my + 410, mw - 80, 48, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
+        vita2d_pgf_draw_text(s_font, (int)(mx + 70), (int)(my + 440), COLOR_TEXT_GREEN, 0.85f,
+                             "Press [SELECT] or [O] to return to deck");
     }
 }
 
 void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
-              const InputState *input, const AppConfig *config, bool is_syncing) {
+              const InputState *input, const AppConfig *config, bool is_syncing,
+              bool show_qr_overlay) {
     vita2d_start_drawing();
     vita2d_clear_screen();
 
@@ -398,6 +520,10 @@ void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
     } else {
         render_transport_bar(state, input);
         render_cassette_bay(state, interpolated_progress_ms, is_syncing);
+
+        if (show_qr_overlay) {
+            render_qr_overlay(config);
+        }
     }
 
     vita2d_end_drawing();

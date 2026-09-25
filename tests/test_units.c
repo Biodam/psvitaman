@@ -8,6 +8,7 @@
 #include "../src/utils.h"
 #include "../src/ini.h"
 #include "../src/cJSON.h"
+#include "../src/qrcodegen.h"
 
 static int test_ini_handler(void* user, const char* section, const char* name, const char* value) {
     char *out = (char*)user;
@@ -72,12 +73,27 @@ void test_cjson_parsing(void) {
     printf("[PASS] cJSON: successfully parsed Spotify playback JSON\n");
 }
 
+void test_qrcodegen(void) {
+    const char *url = "https://accounts.spotify.com/authorize?client_id=test_client_id&response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A8888%2Fcallback";
+    uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+    uint8_t tempBuffer[qrcodegen_BUFFER_LEN_MAX];
+    bool ok = qrcodegen_encodeText(url, tempBuffer, qrcode, qrcodegen_Ecc_LOW,
+                                   qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+                                   qrcodegen_Mask_AUTO, true);
+    assert(ok == true);
+    int size = qrcodegen_getSize(qrcode);
+    assert(size >= 21);
+    assert(qrcodegen_getModule(qrcode, 0, 0) == true);
+    printf("[PASS] qrcodegen: successfully generated QR code (size: %dx%d) for Spotify OAuth URL\n", size, size);
+}
+
 int main(void) {
     printf("=== Running PSVitaman Unit Tests ===\n");
     test_utils_base64();
     test_utils_format_time();
     test_ini_string_parsing();
     test_cjson_parsing();
+    test_qrcodegen();
     printf("=== ALL UNIT TESTS PASSED SUCCESSFULLY! ===\n");
     return 0;
 }

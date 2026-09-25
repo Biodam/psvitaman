@@ -66,6 +66,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     bool app_running = true;
+    bool show_qr_overlay = false;
 
     while (app_running) {
         /* Calculate Delta Time */
@@ -82,31 +83,41 @@ int main(int argc, char *argv[]) {
         input_poll(&input);
 
         if (config.is_valid) {
-            /* Map physical / touch inputs to Spotify Worker commands */
 #if defined(__psp2__) || defined(__VITA__)
-            if (input.pressed_buttons & SCE_CTRL_CROSS) {
-                worker_enqueue_command(CMD_TOGGLE_PLAY_PAUSE);
+            /* Toggle QR Code pairing overlay with SELECT */
+            if (input.pressed_buttons & SCE_CTRL_SELECT) {
+                show_qr_overlay = !show_qr_overlay;
             }
-            if (input.pressed_buttons & SCE_CTRL_RTRIGGER) {
-                worker_enqueue_command(CMD_SKIP_NEXT);
+            if (show_qr_overlay && (input.pressed_buttons & SCE_CTRL_CIRCLE)) {
+                show_qr_overlay = false;
             }
-            if (input.pressed_buttons & SCE_CTRL_LTRIGGER) {
-                worker_enqueue_command(CMD_SKIP_PREV);
-            }
-            if (input.pressed_buttons & SCE_CTRL_SQUARE) {
-                worker_enqueue_command(CMD_TOGGLE_SHUFFLE);
-            }
-            if (input.pressed_buttons & SCE_CTRL_TRIANGLE) {
-                worker_enqueue_command(CMD_CYCLE_REPEAT);
-            }
-            if (input.pressed_buttons & SCE_CTRL_UP) {
-                worker_enqueue_command(CMD_VOLUME_UP);
-            }
-            if (input.pressed_buttons & SCE_CTRL_DOWN) {
-                worker_enqueue_command(CMD_VOLUME_DOWN);
-            }
-            if (input.pressed_buttons & SCE_CTRL_START) {
-                worker_enqueue_command(CMD_FORCE_REFRESH);
+
+            /* Only process playback buttons if modal overlay is not blocking */
+            if (!show_qr_overlay) {
+                if (input.pressed_buttons & SCE_CTRL_CROSS) {
+                    worker_enqueue_command(CMD_TOGGLE_PLAY_PAUSE);
+                }
+                if (input.pressed_buttons & SCE_CTRL_RTRIGGER) {
+                    worker_enqueue_command(CMD_SKIP_NEXT);
+                }
+                if (input.pressed_buttons & SCE_CTRL_LTRIGGER) {
+                    worker_enqueue_command(CMD_SKIP_PREV);
+                }
+                if (input.pressed_buttons & SCE_CTRL_SQUARE) {
+                    worker_enqueue_command(CMD_TOGGLE_SHUFFLE);
+                }
+                if (input.pressed_buttons & SCE_CTRL_TRIANGLE) {
+                    worker_enqueue_command(CMD_CYCLE_REPEAT);
+                }
+                if (input.pressed_buttons & SCE_CTRL_UP) {
+                    worker_enqueue_command(CMD_VOLUME_UP);
+                }
+                if (input.pressed_buttons & SCE_CTRL_DOWN) {
+                    worker_enqueue_command(CMD_VOLUME_DOWN);
+                }
+                if (input.pressed_buttons & SCE_CTRL_START) {
+                    worker_enqueue_command(CMD_FORCE_REFRESH);
+                }
             }
 #endif
         } else {
@@ -133,7 +144,7 @@ int main(int argc, char *argv[]) {
         ui_update(dt, &playback, interpolated_progress_ms);
 
         /* Render frame */
-        ui_render(&playback, interpolated_progress_ms, &input, &config, worker_is_syncing());
+        ui_render(&playback, interpolated_progress_ms, &input, &config, worker_is_syncing(), show_qr_overlay);
     }
 
     /* Shutdown Sequence */

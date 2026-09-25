@@ -26,6 +26,7 @@ set(SOURCES
   src/worker.c
   src/input.c
   src/ui.c
+  src/qrcodegen.c
 )
 
 add_executable(psvitaman ${SOURCES})

@@ -12,6 +12,7 @@
 
 - **Retro Walkman Aesthetic**: Authentic cassette shell design, tape window, tape ribbon, and dual rotating cassette reels.
 - **Dynamic Cassette Spools**: Real-time rotational physics when tracks are playing, with progressive tape radius (left supply reel shrinks, right take-up reel expands).
+- **On-Screen QR Code Pairing**: Real-time high-contrast QR code generated directly on the PS Vita screen. Point your phone camera at the screen to immediately open the Spotify authorization page or re-pair devices.
 - **Physical & Touch Controls**: Seamless control with PS Vita face buttons/triggers or by tapping the on-screen mechanical transport buttons.
 - **Live HUD Display**: Track title marquee scrolling, Artist & Album names, millisecond-accurate time counter (`02:14 / 04:30`), volume percentage, and active Spotify device name.
 - **Threaded Network Engine**: Non-blocking Spotify Web API synchronization via `libcurl`, maintaining 60 FPS rendering on the Vita display.
@@ -30,7 +31,9 @@
 | **Triangle ($\triangle$)** | Tap **REPEAT** button | Cycle Repeat Mode (Off/Context/Track) | `PUT /v1/me/player/repeat` |
 | **D-Pad Up** | — | Volume Up (+5%) | `PUT /v1/me/player/volume` |
 | **D-Pad Down** | — | Volume Down (-5%) | `PUT /v1/me/player/volume` |
-| **Start** | — | Force Refresh State / Poller Reset | `GET /v1/me/player` |
+| **Select** | — | Toggle QR Code Pairing Modal Overlay | Overlay |
+| **Circle ($\bigcirc$)** | — | Close QR Modal Overlay | Overlay |
+| **Start** | — | Force Refresh State / Reload Config | `GET /v1/me/player` |
 
 ---
 

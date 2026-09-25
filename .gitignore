@@ -5,6 +5,7 @@ bin/
 *.velf
 *.self
 *.vpk
+*.obj
 eboot.bin
 param.sfo
 

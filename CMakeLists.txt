@@ -89,6 +89,7 @@ set(SOURCES
   src/input.c
   src/ui.c
   src/qrcodegen.c
+  src/compat_openssl.c
 )
 
 add_executable(psvitaman ${SOURCES})

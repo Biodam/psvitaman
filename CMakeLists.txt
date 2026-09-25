@@ -91,6 +91,8 @@ set(SOURCES
   src/http_server.c
   src/qrcodegen.c
   src/compat_openssl.c
+  src/logger.c
+  src/error.c
 )
 
 add_executable(psvitaman ${SOURCES})

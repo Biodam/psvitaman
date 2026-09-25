@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "qrcodegen.h"
 #include "http_server.h"
+#include "error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -527,9 +528,61 @@ static void render_qr_overlay(const AppConfig *config) {
     }
 }
 
+static void draw_multiline_text(vita2d_pgf *font, int x, int y, unsigned int color, float scale, int line_spacing, const char *text) {
+    if (!font || !text) return;
+    char buf[256];
+    const char *p = text;
+    int cur_y = y;
+    while (*p) {
+        int i = 0;
+        while (*p && *p != '\n' && i < (int)sizeof(buf) - 1) {
+            buf[i++] = *p++;
+        }
+        buf[i] = '\0';
+        if (*p == '\n') p++;
+        vita2d_pgf_draw_text(font, x, cur_y, color, scale, buf);
+        cur_y += line_spacing;
+    }
+}
+
+static void render_error_modal(const AppError *error) {
+    if (!error || !error->is_active) return;
+
+    /* Semi-transparent dark backdrop overlay */
+    vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, RGBA8(10, 12, 18, 230));
+
+    float mx = 180, my = 100, mw = 600, mh = 344;
+    draw_beveled_box(mx, my, mw, mh, RGBA8(26, 30, 42, 255), COLOR_LABEL_RED, COLOR_BORDER_DARK);
+
+    /* Red Title Bar Header */
+    vita2d_draw_rectangle(mx + 2, my + 2, mw - 4, 46, COLOR_LABEL_RED);
+    if (s_font) {
+        char title_buf[128];
+        snprintf(title_buf, sizeof(title_buf), "[!] SYSTEM ALERT - %s (0x%04X)",
+                 error->title, (unsigned int)error->code);
+        vita2d_pgf_draw_text(s_font, (int)(mx + 20), (int)(my + 32), COLOR_TEXT_WHITE, 0.95f, title_buf);
+    }
+
+    /* Inner Details Container */
+    draw_beveled_box(mx + 20, my + 64, mw - 40, 190, RGBA8(18, 22, 30, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
+
+    if (s_font) {
+        /* Section Tag */
+        vita2d_pgf_draw_text(s_font, (int)(mx + 38), (int)(my + 95), COLOR_TEXT_AMBER, 0.82f, "Diagnostic Information:");
+
+        /* Error Description Text (multi-line supported) */
+        draw_multiline_text(s_font, (int)(mx + 38), (int)(my + 130), COLOR_TEXT_WHITE, 0.85f, 26, error->message);
+
+        /* Action Advice Inset Bar */
+        draw_beveled_box(mx + 20, my + 270, mw - 40, 52, RGBA8(14, 18, 24, 255), COLOR_BORDER_DARK, COLOR_BTN_ACTIVE);
+        const char *hint = (strlen(error->action_hint) > 0) ? error->action_hint : "Press [X] or [O] to dismiss";
+        vita2d_pgf_draw_text(s_font, (int)(mx + 38), (int)(my + 304), COLOR_TEXT_GREEN, 0.88f, hint);
+    }
+}
+
 void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
               const InputState *input, const AppConfig *config, bool is_syncing,
-              bool show_qr_overlay) {
+              bool show_qr_overlay, const AppError *error) {
     vita2d_start_drawing();
     vita2d_clear_screen();
 
@@ -542,6 +595,11 @@ void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
         if (show_qr_overlay) {
             render_qr_overlay(config);
         }
+    }
+
+    /* Modal error overlay draws on top of all screens if active */
+    if (error && error->is_active) {
+        render_error_modal(error);
     }
 
     vita2d_end_drawing();

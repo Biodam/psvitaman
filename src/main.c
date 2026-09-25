@@ -15,6 +15,8 @@
 #include "input.h"
 #include "ui.h"
 #include "http_server.h"
+#include "logger.h"
+#include "error.h"
 
 #if defined(__psp2__) || defined(__VITA__)
 #include <psp2/kernel/processmgr.h>
@@ -50,18 +52,31 @@ int main(int argc, char *argv[]) {
     vita2d_set_clear_color(RGBA8(22, 26, 34, 255));
 #endif
 
-    /* 4. Initialize Network & Libraries */
+    /* 4. Initialize Network & Diagnostics */
+    log_init("ux0:data/psvitaman/psvitaman.log");
+    error_init();
+    LOG_INFO("PSVitaman initializing...");
+
     curl_global_init(CURL_GLOBAL_ALL);
     input_init();
     ui_init();
 
-    /* 5. Load App Configuration */
+    /* 5. Check Network & Load Configuration */
+    char local_ip[32] = {0};
+    if (http_server_get_local_ip(local_ip, sizeof(local_ip))) {
+        LOG_INFO("Wi-Fi network active - Vita IP: %s", local_ip);
+    } else {
+        LOG_WARN("Wi-Fi not connected or IP not assigned at startup");
+    }
+
     AppConfig config;
     config_load(&config);
 
     if (config.is_valid) {
+        LOG_INFO("Loaded valid configuration - starting Spotify worker");
         worker_start(&config);
     } else {
+        LOG_INFO("Setup required - starting HTTP pairing server on port %d", HTTP_SERVER_DEFAULT_PORT);
         http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
     }
 
@@ -86,18 +101,48 @@ int main(int argc, char *argv[]) {
         InputState input;
         input_poll(&input);
 
+        /* Retrieve snapshot of active error modal if present */
+        AppError current_error = {0};
+        bool has_error = error_is_active();
+        if (has_error) {
+            error_get(&current_error);
+        }
+
+#if defined(__psp2__) || defined(__VITA__)
+        /* Handle active error modal dismissal & shortcuts */
+        if (has_error) {
+            if (input.pressed_buttons & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {
+                error_clear();
+                has_error = false;
+            } else if (current_error.code == APP_ERR_SPOTIFY_AUTH && (input.pressed_buttons & SCE_CTRL_SELECT)) {
+                error_clear();
+                has_error = false;
+                show_qr_overlay = true;
+                if (!http_server_is_running()) {
+                    http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
+                }
+            }
+        }
+#endif
+
         if (config.is_valid) {
 #if defined(__psp2__) || defined(__VITA__)
             /* Toggle QR Code pairing overlay with SELECT */
-            if (input.pressed_buttons & SCE_CTRL_SELECT) {
+            if (!has_error && (input.pressed_buttons & SCE_CTRL_SELECT)) {
                 show_qr_overlay = !show_qr_overlay;
+                if (show_qr_overlay) {
+                    if (!http_server_is_running()) http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
+                } else {
+                    if (http_server_is_running()) http_server_stop();
+                }
             }
             if (show_qr_overlay && (input.pressed_buttons & SCE_CTRL_CIRCLE)) {
                 show_qr_overlay = false;
+                if (http_server_is_running()) http_server_stop();
             }
 
-            /* Only process playback buttons if modal overlay is not blocking */
-            if (!show_qr_overlay) {
+            /* Only process playback buttons if modal overlay and error are not blocking */
+            if (!show_qr_overlay && !has_error) {
                 if (input.pressed_buttons & SCE_CTRL_CROSS) {
                     worker_enqueue_command(CMD_TOGGLE_PLAY_PAUSE);
                 }
@@ -127,7 +172,10 @@ int main(int argc, char *argv[]) {
         } else {
             /* Check if HTTP pairing server received auth credentials from phone */
             if (http_server_has_received_auth()) {
+                LOG_INFO("Auth received! Stopping HTTP server and starting worker");
                 http_server_stop();
+                show_qr_overlay = false;
+                error_clear();
                 if (config_load(&config) && config.is_valid) {
                     worker_start(&config);
                 }
@@ -144,6 +192,18 @@ int main(int argc, char *argv[]) {
 #endif
         }
 
+        /* Also check if QR overlay in paired mode received new token */
+        if (show_qr_overlay && http_server_has_received_auth()) {
+            LOG_INFO("Re-pairing credentials received! Refreshing worker");
+            http_server_stop();
+            show_qr_overlay = false;
+            error_clear();
+            if (config_load(&config) && config.is_valid) {
+                worker_stop();
+                worker_start(&config);
+            }
+        }
+
         /* Retrieve snapshot of playback state */
         SpotifyPlaybackState playback;
         int interpolated_progress_ms = 0;
@@ -157,10 +217,12 @@ int main(int argc, char *argv[]) {
         ui_update(dt, &playback, interpolated_progress_ms);
 
         /* Render frame */
-        ui_render(&playback, interpolated_progress_ms, &input, &config, worker_is_syncing(), show_qr_overlay);
+        ui_render(&playback, interpolated_progress_ms, &input, &config,
+                  worker_is_syncing(), show_qr_overlay, &current_error);
     }
 
     /* Shutdown Sequence */
+    LOG_INFO("PSVitaman shutting down...");
     if (http_server_is_running()) {
         http_server_stop();
     }
@@ -170,6 +232,8 @@ int main(int argc, char *argv[]) {
 
     ui_cleanup();
     curl_global_cleanup();
+    error_cleanup();
+    log_close();
 
 #if defined(__psp2__) || defined(__VITA__)
     vita2d_fini();

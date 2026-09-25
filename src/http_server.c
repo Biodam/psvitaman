@@ -4,6 +4,8 @@
 
 #include "http_server.h"
 #include "config.h"
+#include "logger.h"
+#include "error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,7 +130,7 @@ static bool extract_param(const char *haystack, const char *key, char *out_val, 
 }
 
 static void handle_client(int client_sock, const char *request) {
-    char response[2048];
+    char response[4096];
     memset(response, 0, sizeof(response));
 
     /* 1. CORS Preflight OPTIONS */
@@ -155,9 +157,9 @@ static void handle_client(int client_sock, const char *request) {
                  "HTTP/1.1 200 OK\r\n"
                  "Content-Type: application/json\r\n"
                  "Access-Control-Allow-Origin: *\r\n"
-                 "Content-Length: %zu\r\n"
+                 "Content-Length: %u\r\n"
                  "Connection: close\r\n\r\n%s",
-                 strlen(body), body);
+                 (unsigned int)strlen(body), body);
 #if defined(__psp2__) || defined(__VITA__)
         sceNetSend(client_sock, response, strlen(response), 0);
 #else
@@ -177,6 +179,7 @@ static void handle_client(int client_sock, const char *request) {
         extract_param(request, "client_secret", client_secret, sizeof(client_secret));
 
         if (strlen(refresh_token) > 0) {
+            LOG_INFO("HTTP /save received valid token from phone client");
             if (s_config) {
                 strncpy(s_config->refresh_token, refresh_token, sizeof(s_config->refresh_token) - 1);
                 s_config->refresh_token[sizeof(s_config->refresh_token) - 1] = '\0';
@@ -194,6 +197,7 @@ static void handle_client(int client_sock, const char *request) {
 
                 s_config->is_valid = true;
                 config_save(s_config);
+                LOG_INFO("Config saved successfully to ux0:data/psvitaman/config.ini");
             }
 
             s_auth_received = true;
@@ -205,9 +209,9 @@ static void handle_client(int client_sock, const char *request) {
                      "Access-Control-Allow-Origin: *\r\n"
                      "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
                      "Access-Control-Allow-Headers: *\r\n"
-                     "Content-Length: %zu\r\n"
+                     "Content-Length: %u\r\n"
                      "Connection: close\r\n\r\n%s",
-                     strlen(S_HTML_SUCCESS), S_HTML_SUCCESS);
+                     (unsigned int)strlen(S_HTML_SUCCESS), S_HTML_SUCCESS);
 
 #if defined(__psp2__) || defined(__VITA__)
             sceNetSend(client_sock, response, strlen(response), 0);
@@ -218,14 +222,15 @@ static void handle_client(int client_sock, const char *request) {
         }
 
         /* Missing token */
+        LOG_WARN("HTTP /save request rejected: missing refresh_token");
         const char *err_body = "{\"error\":\"Missing refresh_token parameter\"}";
         snprintf(response, sizeof(response),
                  "HTTP/1.1 400 Bad Request\r\n"
                  "Content-Type: application/json\r\n"
                  "Access-Control-Allow-Origin: *\r\n"
-                 "Content-Length: %zu\r\n"
+                 "Content-Length: %u\r\n"
                  "Connection: close\r\n\r\n%s",
-                 strlen(err_body), err_body);
+                 (unsigned int)strlen(err_body), err_body);
 #if defined(__psp2__) || defined(__VITA__)
         sceNetSend(client_sock, response, strlen(response), 0);
 #else
@@ -250,6 +255,8 @@ static int http_server_thread_func(SceSize args, void *argp) {
 
     s_server_sock = sceNetSocket("psvitaman_httpd", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
     if (s_server_sock < 0) {
+        LOG_ERROR("HTTP server: sceNetSocket failed: 0x%X", s_server_sock);
+        error_set(APP_ERR_HTTP_SERVER_FAIL, "Pairing Server Error", "Failed to create HTTP socket.", "Press [X] to dismiss");
         s_running = false;
         return -1;
     }
@@ -264,6 +271,8 @@ static int http_server_thread_func(SceSize args, void *argp) {
     server_addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
 
     if (sceNetBind(s_server_sock, (const struct SceNetSockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        LOG_ERROR("HTTP server: sceNetBind failed on port %d", s_port);
+        error_set(APP_ERR_HTTP_SERVER_FAIL, "Pairing Server Error", "Failed to bind pairing server port 8888.", "Press [X] to dismiss");
         sceNetSocketClose(s_server_sock);
         s_server_sock = -1;
         s_running = false;
@@ -271,11 +280,14 @@ static int http_server_thread_func(SceSize args, void *argp) {
     }
 
     if (sceNetListen(s_server_sock, 4) < 0) {
+        LOG_ERROR("HTTP server: sceNetListen failed");
         sceNetSocketClose(s_server_sock);
         s_server_sock = -1;
         s_running = false;
         return -1;
     }
+
+    LOG_INFO("HTTP pairing server listening on port %d", s_port);
 
     while (s_running) {
         struct SceNetSockaddrIn client_addr;
@@ -305,7 +317,7 @@ static int http_server_thread_func(SceSize args, void *argp) {
 #else
 static void *http_server_thread_func(void *arg) {
     (void)arg;
-    /* Dummy stub for host builds */
+    LOG_INFO("HTTP server stub started (host build)");
     while (s_running) {
         usleep(100000);
     }
@@ -321,13 +333,17 @@ bool http_server_start(int port, AppConfig *config) {
     s_auth_received = false;
     s_running = true;
 
+    LOG_INFO("Starting HTTP pairing server on port %d...", s_port);
+
 #if defined(__psp2__) || defined(__VITA__)
     s_http_thid = sceKernelCreateThread("psvitaman_httpd", http_server_thread_func, 0x10000100, 0x10000, 0, 0, NULL);
     if (s_http_thid < 0) {
+        LOG_ERROR("HTTP server: sceKernelCreateThread failed: 0x%X", s_http_thid);
         s_running = false;
         return false;
     }
     if (sceKernelStartThread(s_http_thid, 0, NULL) < 0) {
+        LOG_ERROR("HTTP server: sceKernelStartThread failed");
         s_running = false;
         return false;
     }
@@ -346,6 +362,8 @@ void http_server_stop(void) {
     s_running = false;
 
 #if defined(__psp2__) || defined(__VITA__)
+    /* 100ms grace period to allow client response transmission to finish cleanly */
+    sceKernelDelayThread(100000);
     if (s_server_sock >= 0) {
         sceNetSocketClose(s_server_sock);
         s_server_sock = -1;
@@ -355,8 +373,11 @@ void http_server_stop(void) {
         s_http_thid = -1;
     }
 #else
+    usleep(100000);
     pthread_join(s_http_thread, NULL);
 #endif
+
+    LOG_INFO("HTTP pairing server stopped successfully");
 }
 
 bool http_server_is_running(void) {

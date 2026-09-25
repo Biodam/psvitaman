@@ -5,6 +5,8 @@
 #include "spotify.h"
 #include "utils.h"
 #include "cJSON.h"
+#include "logger.h"
+#include "error.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,11 +124,26 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
             if (tok && cJSON_IsString(tok)) {
                 utils_safe_strncpy(access_token_out, tok->valuestring, token_max);
                 if (expires_in_out) {
-                    *expires_in_out = exp ? exp->valueint : 3600;
+                    *expires_in_out = (exp && cJSON_IsNumber(exp)) ? exp->valueint : 3600;
                 }
                 success = true;
+                LOG_INFO("Spotify token refreshed successfully, valid for %d s", expires_in_out ? *expires_in_out : 3600);
             }
             cJSON_Delete(json);
+        }
+    } else {
+        if (res != CURLE_OK) {
+            LOG_ERROR("Spotify token refresh curl error: %s", curl_easy_strerror(res));
+            error_set(APP_ERR_SPOTIFY_TIMEOUT, "Spotify Network Timeout",
+                      "Could not connect to Spotify auth server. Check your Wi-Fi.",
+                      "Press [X] to dismiss");
+        } else {
+            LOG_ERROR("Spotify token refresh failed: HTTP %ld", http_code);
+            if (http_code == 400 || http_code == 401) {
+                error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
+                          "Your Spotify authorization token is invalid or expired. Please re-pair your account.",
+                          "Press [SELECT] to pair phone | [X] Dismiss");
+            }
         }
     }
 
@@ -181,7 +198,7 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
                 state->is_playing = playing ? cJSON_IsTrue(playing) : false;
 
                 cJSON *progress = cJSON_GetObjectItem(json, "progress_ms");
-                state->progress_ms = progress ? progress->valueint : 0;
+                state->progress_ms = (progress && cJSON_IsNumber(progress)) ? progress->valueint : 0;
 
                 cJSON *shuffle = cJSON_GetObjectItem(json, "shuffle_state");
                 state->shuffle_state = shuffle ? cJSON_IsTrue(shuffle) : false;
@@ -203,7 +220,7 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
                         utils_safe_strncpy(state->device_name, dev_name->valuestring, sizeof(state->device_name));
                     }
                     cJSON *vol = cJSON_GetObjectItem(device, "volume_percent");
-                    if (vol) state->volume_percent = vol->valueint;
+                    if (vol && cJSON_IsNumber(vol)) state->volume_percent = vol->valueint;
                 }
 
                 cJSON *item = cJSON_GetObjectItem(json, "item");
@@ -214,7 +231,7 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
                     }
 
                     cJSON *duration = cJSON_GetObjectItem(item, "duration_ms");
-                    if (duration) state->duration_ms = duration->valueint;
+                    if (duration && cJSON_IsNumber(duration)) state->duration_ms = duration->valueint;
 
                     cJSON *album = cJSON_GetObjectItem(item, "album");
                     if (album) {
@@ -243,10 +260,28 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
             }
         } else if (http_code == 401) {
             state->auth_error = true;
+            LOG_WARN("Spotify API 401 Unauthorized - token expired");
+            error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
+                      "Authorization token expired or invalid. Please re-pair your account.",
+                      "Press [SELECT] to pair phone | [X] Dismiss");
+        } else if (http_code == 403) {
+            LOG_ERROR("Spotify API 403 Forbidden - Spotify Premium required");
+            error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
+                      "Spotify Web API restricts player control to Premium subscribers.",
+                      "Press [X] to dismiss");
+        } else if (http_code == 429) {
+            LOG_WARN("Spotify API 429 Rate Limit exceeded");
+            error_set(APP_ERR_SPOTIFY_RATE_LIMIT, "API Rate Limit Exceeded",
+                      "Spotify is temporarily throttling requests. Auto-recovering shortly.",
+                      "Press [X] to dismiss");
         }
     } else {
         state->network_error = true;
         utils_safe_strncpy(state->error_message, curl_easy_strerror(res), sizeof(state->error_message));
+        LOG_WARN("Spotify get_playback failed: %s", state->error_message);
+        error_set(APP_ERR_SPOTIFY_TIMEOUT, "Spotify Network Timeout",
+                  "Failed to reach Spotify API. Please verify your Wi-Fi connection.",
+                  "Press [X] to dismiss");
     }
 
     curl_slist_free_all(headers);
@@ -281,7 +316,27 @@ static bool spotify_send_rest_cmd(const char *access_token, const char *url, con
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
-    return (res == CURLE_OK && (http_code >= 200 && http_code < 300));
+    if (res == CURLE_OK) {
+        if (http_code >= 200 && http_code < 300) {
+            return true;
+        } else if (http_code == 404) {
+            LOG_WARN("Spotify command (%s %s) failed: HTTP 404 No Active Device", method, url);
+            error_set(APP_ERR_SPOTIFY_NO_DEVICE, "No Active Spotify Device",
+                      "Spotify did not find an active playback device. Start music on phone, PC, or speaker first.",
+                      "Press [X] to dismiss");
+        } else if (http_code == 403) {
+            LOG_ERROR("Spotify command (%s %s) failed: HTTP 403 Premium Required", method, url);
+            error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
+                      "Spotify Web API restricts player control to Premium subscribers.",
+                      "Press [X] to dismiss");
+        } else {
+            LOG_WARN("Spotify command (%s %s) returned HTTP %ld", method, url, http_code);
+        }
+    } else {
+        LOG_ERROR("Spotify command (%s %s) curl error: %s", method, url, curl_easy_strerror(res));
+    }
+
+    return false;
 }
 
 bool spotify_play(const char *access_token) {

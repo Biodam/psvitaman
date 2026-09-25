@@ -8,6 +8,7 @@
 #include "spotify.h"
 #include "input.h"
 #include "config.h"
+#include "error.h"
 #include <stdbool.h>
 
 #define SCREEN_WIDTH  960
@@ -25,6 +26,6 @@ void ui_update(float delta_time, const SpotifyPlaybackState *state, int interpol
 /* Render main Walkman interface frame */
 void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
               const InputState *input, const AppConfig *config, bool is_syncing,
-              bool show_qr_overlay);
+              bool show_qr_overlay, const AppError *error);
 
 #endif /* PSVITAMAN_UI_H */

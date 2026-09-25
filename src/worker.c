@@ -143,12 +143,14 @@ static void handle_command(WorkerCommand cmd, const char *token) {
 
 #if defined(__psp2__) || defined(__VITA__)
 static int worker_thread_func(SceSize args, void *argp)
-#else
-static void* worker_thread_func(void *argp)
-#endif
 {
     (void)args;
     (void)argp;
+#else
+static void* worker_thread_func(void *argp)
+{
+    (void)argp;
+#endif
 
     uint64_t last_poll_tick = 0;
 

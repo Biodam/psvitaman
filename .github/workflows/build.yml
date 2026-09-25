@@ -23,6 +23,16 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
+          echo "=== curl-config ==="
+          curl-config --libs || true
+          echo "=== arm-vita-eabi curl-config ==="
+          ${VITASDK}/bin/arm-vita-eabi-curl-config --libs || true
+          echo "=== pkg-config ==="
+          pkg-config --libs libcurl || true
+          echo "=== Installed libraries in VITASDK ==="
+          ls -la ${VITASDK}/arm-vita-eabi/lib/libcurl* ${VITASDK}/arm-vita-eabi/lib/libssl* ${VITASDK}/arm-vita-eabi/lib/libcrypto* ${VITASDK}/arm-vita-eabi/lib/libmbed* || true
+          echo "=== Checking symbols in libssl.a ==="
+          arm-vita-eabi-nm ${VITASDK}/arm-vita-eabi/lib/libssl.a | grep -i SSL_library_init || true
           mkdir build
           cd build
           cmake -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake ..

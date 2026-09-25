@@ -1,0 +1,25 @@
+# Build outputs
+build/
+bin/
+*.elf
+*.velf
+*.self
+*.vpk
+eboot.bin
+param.sfo
+
+# Secrets and local credentials
+config.ini
+*.token
+*.pem.bak
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.suo
+*~
+Thumbs.db
+.DS_Store
+__pycache__/
+*.pyc

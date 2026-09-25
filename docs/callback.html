@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSVitaman - Spotify Callback</title>
+  <style>
+    :root {
+      --bg: #121622;
+      --card-bg: #1c2230;
+      --accent: #00d26a;
+      --accent-hover: #00ea76;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --border: #2a3446;
+      --tape-red: #d32f2f;
+      --tape-blue: #1976d2;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 440px;
+      padding: 32px 24px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .racing-stripe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: linear-gradient(90deg, var(--tape-red) 50%, var(--tape-blue) 50%);
+    }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(0, 210, 106, 0.12);
+      border: 1px solid rgba(0, 210, 106, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .status-box {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin: 18px 0;
+      text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .status-title {
+      font-weight: bold;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      background: var(--accent);
+      color: #121622;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 14px 20px;
+      border-radius: 10px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+      margin-top: 10px;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: scale(0.98); }
+    .footer {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #586069;
+      text-align: center;
+    }
+    .token-display {
+      user-select: all;
+      background: #0d1117;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--accent);
+      max-height: 80px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="racing-stripe"></div>
+    <div class="badge" id="badgeText">PSVitaman Callback</div>
+    <h1 id="titleText">Completing Pairing</h1>
+    <p id="descText">Finalizing Spotify authorization with your PS Vita...</p>
+
+    <div class="status-box" id="statusBox">
+      <div class="status-title" id="statusTitle">
+        <span class="spinner" id="spinner"></span>
+        <span id="statusLabel">Exchanging Token...</span>
+      </div>
+      <div id="statusDetail" style="color: var(--text-muted);">Contacting Spotify...</div>
+      <div id="tokenBox" style="display: none;" class="token-display"></div>
+    </div>
+
+    <div id="actionArea"></div>
+  </div>
+
+  <div class="footer">
+    PSVitaman • C-90 High Bias Stereo Remote
+  </div>
+
+  <form id="vitaSubmitForm" method="POST" style="display:none;">
+    <input type="hidden" name="refresh_token" id="formRefreshToken" value="">
+    <input type="hidden" name="client_id" id="formClientId" value="">
+  </form>
+
+  <script>
+    const DEFAULT_CLIENT_ID = "4274a722ea7d42c1b9cc3f3247a7be4a";
+
+    async function handleOAuthCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const stateIp = params.get('state');
+      const error = params.get('error');
+
+      if (error) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "Authorization Denied";
+        document.getElementById('statusLabel').style.color = "var(--tape-red)";
+        document.getElementById('statusDetail').textContent = "Spotify error: " + error;
+        document.getElementById('descText').textContent = "Please rescan the QR code on your PS Vita to retry.";
+        return;
+      }
+
+      if (!code) {
+        // No code, redirect to index.html
+        window.location.href = "index.html";
+        return;
+      }
+
+      const verifier = sessionStorage.getItem('psvita_verifier') || localStorage.getItem('psvita_verifier');
+      const clientId = sessionStorage.getItem('psvita_client_id') || localStorage.getItem('psvita_client_id') || DEFAULT_CLIENT_ID;
+      const vitaIp = stateIp || sessionStorage.getItem('psvita_ip') || localStorage.getItem('psvita_ip');
+
+      if (!verifier) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "PKCE Session Missing";
+        document.getElementById('statusDetail').textContent = "Authentication expired. Please scan the Vita QR code again.";
+        return;
+      }
+
+      const redirectUri = window.location.origin + window.location.pathname;
+
+      try {
+        const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: clientId,
+            grant_type: "authorization_code",
+            code: code,
+            redirect_uri: redirectUri,
+            code_verifier: verifier
+          })
+        });
+
+        const tokenData = await tokenRes.json();
+
+        if (!tokenRes.ok || !tokenData.refresh_token) {
+          throw new Error(tokenData.error_description || tokenData.error || "Failed to exchange authorization code");
+        }
+
+        const refreshToken = tokenData.refresh_token;
+
+        document.getElementById('titleText').textContent = "Sending to PS Vita";
+        document.getElementById('descText').textContent = "Forwarding authorization to your PS Vita at " + (vitaIp || "local network") + "...";
+        document.getElementById('statusLabel').textContent = "Writing Configuration...";
+        document.getElementById('statusDetail').textContent = "Ensure your phone is on the same Wi-Fi as your PS Vita.";
+
+        const tokenBox = document.getElementById('tokenBox');
+        tokenBox.textContent = "Refresh Token: " + refreshToken;
+        tokenBox.style.display = "block";
+
+        const vitaUrl = `http://${vitaIp}:8888/save`;
+        const form = document.getElementById('vitaSubmitForm');
+        form.action = vitaUrl;
+        document.getElementById('formRefreshToken').value = refreshToken;
+        document.getElementById('formClientId').value = clientId;
+
+        // Try direct fetch first
+        let fetchSuccess = false;
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
+
+          await fetch(vitaUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ refresh_token: refreshToken, client_id: clientId }),
+            signal: controller.signal,
+            mode: 'no-cors'
+          });
+          clearTimeout(timeoutId);
+          fetchSuccess = true;
+        } catch (e) {
+          fetchSuccess = false;
+        }
+
+        if (fetchSuccess) {
+          showSuccessView();
+        } else {
+          document.getElementById('statusLabel').textContent = "Completing Connection...";
+          document.getElementById('statusDetail').textContent = "Navigating directly to PS Vita...";
+          setTimeout(() => {
+            form.submit();
+          }, 350);
+        }
+
+      } catch (err) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "Token Error";
+        document.getElementById('statusLabel').style.color = "var(--tape-red)";
+        document.getElementById('statusDetail').textContent = err.message || err;
+      }
+    }
+
+    function showSuccessView() {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('badgeText').textContent = "PAIRED SUCCESSFULLY";
+      document.getElementById('titleText').textContent = "You're All Set!";
+      document.getElementById('descText').textContent = "PSVitaman is now paired with your Spotify account. Return to your PlayStation Vita to enjoy music!";
+      document.getElementById('statusLabel').textContent = "Connected to PS Vita";
+      document.getElementById('statusLabel').style.color = "var(--accent)";
+      document.getElementById('statusDetail').textContent = "Credentials written to ux0:data/psvitaman/config.ini";
+
+      const actionArea = document.getElementById('actionArea');
+      actionArea.innerHTML = `
+        <button class="btn" onclick="window.close()">Close Window</button>
+      `;
+    }
+
+    window.addEventListener('DOMContentLoaded', handleOAuthCallback);
+  </script>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSVitaman - Spotify Remote for PS Vita</title>
+  <style>
+    :root {
+      --bg: #121622;
+      --card-bg: #1c2230;
+      --accent: #00d26a;
+      --accent-hover: #00ea76;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --border: #2a3446;
+      --tape-red: #d32f2f;
+      --tape-blue: #1976d2;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 440px;
+      padding: 32px 24px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .racing-stripe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: linear-gradient(90deg, var(--tape-red) 50%, var(--tape-blue) 50%);
+    }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(0, 210, 106, 0.12);
+      border: 1px solid rgba(0, 210, 106, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .status-box {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin: 18px 0;
+      text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .status-title {
+      font-weight: bold;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .btn {
+      display: inline-block;
+      width: 100%;
+      background: var(--accent);
+      color: #121622;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 14px 20px;
+      border-radius: 10px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+      margin-top: 10px;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: scale(0.98); }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      padding: 10px 16px;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+    .footer {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #586069;
+      text-align: center;
+    }
+    .token-display {
+      user-select: all;
+      background: #0d1117;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--accent);
+      max-height: 80px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="racing-stripe"></div>
+    <div class="badge" id="badgeText">PSVitaman Web Bridge</div>
+    <h1 id="titleText">Pairing PS Vita</h1>
+    <p id="descText">Connecting your Spotify account with PSVitaman...</p>
+
+    <div class="status-box" id="statusBox">
+      <div class="status-title" id="statusTitle">
+        <span class="spinner" id="spinner"></span>
+        <span id="statusLabel">Initializing...</span>
+      </div>
+      <div id="statusDetail" style="color: var(--text-muted);">Please wait...</div>
+      <div id="tokenBox" style="display: none;" class="token-display"></div>
+    </div>
+
+    <div id="actionArea"></div>
+  </div>
+
+  <div class="footer">
+    PSVitaman • C-90 High Bias Stereo Remote
+  </div>
+
+  <form id="vitaSubmitForm" method="POST" style="display:none;">
+    <input type="hidden" name="refresh_token" id="formRefreshToken" value="">
+    <input type="hidden" name="client_id" id="formClientId" value="">
+  </form>
+
+  <script>
+    const DEFAULT_CLIENT_ID = "4274a722ea7d42c1b9cc3f3247a7be4a";
+    const SCOPES = "user-read-playback-state user-modify-playback-state";
+
+    function getRedirectUri() {
+      // Use callback.html as the primary redirect URI
+      return window.location.origin + window.location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '') + '/callback.html';
+    }
+
+    function generateRandomString(length) {
+      const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+      const values = crypto.getRandomValues(new Uint8Array(length));
+      return Array.from(values).map(x => possible[x % possible.length]).join('');
+    }
+
+    async function sha256(plain) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(plain);
+      return window.crypto.subtle.digest('SHA-256', data);
+    }
+
+    function base64urlencode(buffer) {
+      let str = "";
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        str += String.fromCharCode(bytes[i]);
+      }
+      return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    async function generateCodeChallenge(verifier) {
+      const hashed = await sha256(verifier);
+      return base64urlencode(hashed);
+    }
+
+    async function startOAuthFlow(vitaIp, clientId) {
+      document.getElementById('statusLabel').textContent = "Connecting to Spotify...";
+      document.getElementById('statusDetail').textContent = "Preparing secure PKCE authorization...";
+
+      const verifier = generateRandomString(64);
+      const challenge = await generateCodeChallenge(verifier);
+
+      sessionStorage.setItem('psvita_verifier', verifier);
+      sessionStorage.setItem('psvita_ip', vitaIp);
+      sessionStorage.setItem('psvita_client_id', clientId);
+
+      localStorage.setItem('psvita_verifier', verifier);
+      localStorage.setItem('psvita_ip', vitaIp);
+      localStorage.setItem('psvita_client_id', clientId);
+
+      const redirectUri = getRedirectUri();
+      const authUrl = new URL("https://accounts.spotify.com/authorize");
+      authUrl.searchParams.append("response_type", "code");
+      authUrl.searchParams.append("client_id", clientId);
+      authUrl.searchParams.append("scope", SCOPES);
+      authUrl.searchParams.append("redirect_uri", redirectUri);
+      authUrl.searchParams.append("code_challenge_method", "S256");
+      authUrl.searchParams.append("code_challenge", challenge);
+      authUrl.searchParams.append("state", vitaIp);
+
+      setTimeout(() => {
+        window.location.href = authUrl.toString();
+      }, 350);
+    }
+
+    async function handleOAuthCallback(code, stateIp, error) {
+      if (error) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "Authorization Denied";
+        document.getElementById('statusLabel').style.color = "var(--tape-red)";
+        document.getElementById('statusDetail').textContent = "Spotify reported: " + error;
+        document.getElementById('descText').textContent = "You can retry by rescanning the QR code on your PS Vita.";
+        return;
+      }
+
+      document.getElementById('statusLabel').textContent = "Exchanging Token...";
+      document.getElementById('statusDetail').textContent = "Getting refresh token from Spotify...";
+
+      const verifier = sessionStorage.getItem('psvita_verifier') || localStorage.getItem('psvita_verifier');
+      const clientId = sessionStorage.getItem('psvita_client_id') || localStorage.getItem('psvita_client_id') || DEFAULT_CLIENT_ID;
+      const vitaIp = stateIp || sessionStorage.getItem('psvita_ip') || localStorage.getItem('psvita_ip');
+
+      if (!verifier) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "Session Expired";
+        document.getElementById('statusDetail').textContent = "PKCE verifier not found. Please scan the QR code again.";
+        return;
+      }
+
+      const redirectUri = getRedirectUri();
+
+      try {
+        const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: clientId,
+            grant_type: "authorization_code",
+            code: code,
+            redirect_uri: redirectUri,
+            code_verifier: verifier
+          })
+        });
+
+        const tokenData = await tokenRes.json();
+
+        if (!tokenRes.ok || !tokenData.refresh_token) {
+          throw new Error(tokenData.error_description || tokenData.error || "Failed to obtain refresh token");
+        }
+
+        const refreshToken = tokenData.refresh_token;
+
+        // Save acquired token to Vita
+        await sendTokenToVita(vitaIp, clientId, refreshToken);
+
+      } catch (err) {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('statusLabel').textContent = "Token Exchange Failed";
+        document.getElementById('statusLabel').style.color = "var(--tape-red)";
+        document.getElementById('statusDetail').textContent = err.message || err;
+      }
+    }
+
+    async function sendTokenToVita(vitaIp, clientId, refreshToken) {
+      document.getElementById('titleText').textContent = "Sending to PS Vita";
+      document.getElementById('descText').textContent = "Pushing authorization to your PS Vita at " + vitaIp + "...";
+      document.getElementById('statusLabel').textContent = "Pairing with Vita...";
+      document.getElementById('statusDetail').textContent = "Ensure your phone is on the same Wi-Fi as your PS Vita.";
+
+      const tokenBox = document.getElementById('tokenBox');
+      tokenBox.textContent = "Refresh Token: " + refreshToken;
+      tokenBox.style.display = "block";
+
+      const vitaUrl = `http://${vitaIp}:8888/save`;
+      const form = document.getElementById('vitaSubmitForm');
+      form.action = vitaUrl;
+      document.getElementById('formRefreshToken').value = refreshToken;
+      document.getElementById('formClientId').value = clientId;
+
+      // 1. First attempt direct background fetch
+      let fetchSuccess = false;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+
+        const res = await fetch(vitaUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ refresh_token: refreshToken, client_id: clientId }),
+          signal: controller.signal,
+          mode: 'no-cors'
+        });
+        clearTimeout(timeoutId);
+        fetchSuccess = true;
+      } catch (e) {
+        // Fetch blocked by Private Network Access / Mixed Content
+        fetchSuccess = false;
+      }
+
+      if (fetchSuccess) {
+        // Render success state immediately
+        showSuccessView();
+      } else {
+        // Fallback: Submit form navigation directly to Vita HTTP server
+        document.getElementById('statusLabel').textContent = "Completing Connection...";
+        document.getElementById('statusDetail').textContent = "Navigating directly to PS Vita...";
+        setTimeout(() => {
+          form.submit();
+        }, 300);
+      }
+    }
+
+    function showSuccessView() {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('badgeText').textContent = "PAIRED SUCCESSFULLY";
+      document.getElementById('titleText').textContent = "You're All Set!";
+      document.getElementById('descText').textContent = "PSVitaman is now paired with your Spotify account. Return to your PlayStation Vita to enjoy music!";
+      document.getElementById('statusLabel').textContent = "Connected to PS Vita";
+      document.getElementById('statusLabel').style.color = "var(--accent)";
+      document.getElementById('statusDetail').textContent = "Credentials written to ux0:data/psvitaman/config.ini";
+
+      const actionArea = document.getElementById('actionArea');
+      actionArea.innerHTML = `
+        <button class="btn" onclick="window.close()">Close Window</button>
+      `;
+    }
+
+    function renderLandingPage() {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('badgeText').textContent = "PSVitaman Web Gateway";
+      document.getElementById('titleText').textContent = "PSVitaman";
+      document.getElementById('descText').textContent = "Retro Sony Walkman-style Spotify remote client for PlayStation Vita.";
+      document.getElementById('statusLabel').textContent = "Ready for Vita Pairing";
+      document.getElementById('statusDetail').textContent = "Launch PSVitaman on your PS Vita and scan the on-screen QR code with your phone.";
+
+      const actionArea = document.getElementById('actionArea');
+      actionArea.innerHTML = `
+        <a href="https://github.com/Biodam/psvitaman/releases" class="btn">Download Latest VPK</a>
+        <a href="https://github.com/Biodam/psvitaman" class="btn btn-secondary" style="margin-top:8px;">View on GitHub</a>
+      `;
+    }
+
+    // Main Dispatcher
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error');
+      const ip = params.get('ip');
+      const clientId = params.get('client_id') || DEFAULT_CLIENT_ID;
+
+      if (code || error) {
+        handleOAuthCallback(code, state, error);
+      } else if (ip) {
+        startOAuthFlow(ip, clientId);
+      } else {
+        renderLandingPage();
+      }
+    });
+  </script>
+</body>
+</html>

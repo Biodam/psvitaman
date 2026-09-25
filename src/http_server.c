@@ -30,6 +30,7 @@ static volatile bool s_running = false;
 static volatile bool s_auth_received = false;
 static int s_port = HTTP_SERVER_DEFAULT_PORT;
 static AppConfig *s_config = NULL;
+static int s_server_sock = -1;
 
 #if defined(__psp2__) || defined(__VITA__)
 static SceUID s_http_thid = -1;
@@ -247,19 +248,14 @@ static int http_server_thread_func(SceSize args, void *argp) {
     (void)args;
     (void)argp;
 
-    int server_sock = sceNetSocket("psvitaman_httpd", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
-    if (server_sock < 0) {
+    s_server_sock = sceNetSocket("psvitaman_httpd", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
+    if (s_server_sock < 0) {
         s_running = false;
         return -1;
     }
 
     int opt = 1;
-    sceNetSetsockopt(server_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &opt, sizeof(opt));
-
-    struct SceNetTimeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    sceNetSetsockopt(server_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_RCVTIMEO, &tv, sizeof(tv));
+    sceNetSetsockopt(s_server_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &opt, sizeof(opt));
 
     struct SceNetSockaddrIn server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -267,14 +263,16 @@ static int http_server_thread_func(SceSize args, void *argp) {
     server_addr.sin_port = sceNetHtons(s_port);
     server_addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
 
-    if (sceNetBind(server_sock, (const struct SceNetSockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        sceNetCloseSocket(server_sock);
+    if (sceNetBind(s_server_sock, (const struct SceNetSockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        sceNetSocketClose(s_server_sock);
+        s_server_sock = -1;
         s_running = false;
         return -1;
     }
 
-    if (sceNetListen(server_sock, 4) < 0) {
-        sceNetCloseSocket(server_sock);
+    if (sceNetListen(s_server_sock, 4) < 0) {
+        sceNetSocketClose(s_server_sock);
+        s_server_sock = -1;
         s_running = false;
         return -1;
     }
@@ -282,16 +280,12 @@ static int http_server_thread_func(SceSize args, void *argp) {
     while (s_running) {
         struct SceNetSockaddrIn client_addr;
         unsigned int client_len = sizeof(client_addr);
-        int client_sock = sceNetAccept(server_sock, (struct SceNetSockaddr *)&client_addr, &client_len);
+        int client_sock = sceNetAccept(s_server_sock, (struct SceNetSockaddr *)&client_addr, &client_len);
         if (client_sock < 0) {
+            if (!s_running) break;
             sceKernelDelayThread(20000); /* 20ms */
             continue;
         }
-
-        struct SceNetTimeval client_tv;
-        client_tv.tv_sec = 2;
-        client_tv.tv_usec = 0;
-        sceNetSetsockopt(client_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_RCVTIMEO, &client_tv, sizeof(client_tv));
 
         char req_buf[4096];
         memset(req_buf, 0, sizeof(req_buf));
@@ -299,10 +293,13 @@ static int http_server_thread_func(SceSize args, void *argp) {
         if (recvd > 0) {
             handle_client(client_sock, req_buf);
         }
-        sceNetCloseSocket(client_sock);
+        sceNetSocketClose(client_sock);
     }
 
-    sceNetCloseSocket(server_sock);
+    if (s_server_sock >= 0) {
+        sceNetSocketClose(s_server_sock);
+        s_server_sock = -1;
+    }
     return 0;
 }
 #else
@@ -349,6 +346,10 @@ void http_server_stop(void) {
     s_running = false;
 
 #if defined(__psp2__) || defined(__VITA__)
+    if (s_server_sock >= 0) {
+        sceNetSocketClose(s_server_sock);
+        s_server_sock = -1;
+    }
     if (s_http_thid >= 0) {
         sceKernelWaitThreadEnd(s_http_thid, NULL, NULL);
         s_http_thid = -1;

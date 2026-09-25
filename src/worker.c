@@ -4,6 +4,7 @@
 
 #include "worker.h"
 #include "spotify.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,7 +168,7 @@ static void* worker_thread_func(void *argp)
                                      g_config.refresh_token, new_token,
                                      sizeof(new_token), &expires_in)) {
                 lock_mutex();
-                strncpy(g_access_token, new_token, sizeof(g_access_token) - 1);
+                utils_safe_strncpy(g_access_token, new_token, sizeof(g_access_token));
                 /* Refresh 5 minutes before actual expiration */
                 g_token_expiry_tick = now + ((expires_in > 300 ? expires_in - 300 : expires_in) * 1000);
                 g_authenticated = true;

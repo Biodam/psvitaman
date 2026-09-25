@@ -263,7 +263,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         vita2d_disable_clipping();
 
         /* Artist & Album line */
-        char artist_album[512] = {0};
+        char artist_album[600] = {0};
         if (strlen(state->artist_name) > 0) {
             if (strlen(state->album_name) > 0) {
                 snprintf(artist_album, sizeof(artist_album), "%s — %s", state->artist_name, state->album_name);
@@ -347,7 +347,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         vita2d_pgf_draw_text(s_font, (int)(hx + 240), (int)(hy + 30), COLOR_TEXT_WHITE, 0.85f, vol_hud);
 
         /* Target Spotify Device */
-        char dev_hud[128];
+        char dev_hud[256];
         snprintf(dev_hud, sizeof(dev_hud), "DEVICE: %s", (strlen(state->device_name) > 0) ? state->device_name : "None (Idle)");
         vita2d_pgf_draw_text(s_font, (int)(hx + 380), (int)(hy + 30), COLOR_TEXT_AMBER, 0.85f, dev_hud);
 

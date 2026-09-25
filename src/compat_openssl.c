@@ -79,19 +79,45 @@ const SSL_METHOD *SSLv23_client_method(void) {
     return TLS_client_method();
 }
 
+#include <stdint.h>
+#include <stdbool.h>
+
+static inline bool is_sane_stack(const OPENSSL_STACK *st) {
+    if (!st) return false;
+    uintptr_t addr = (uintptr_t)st;
+    if (addr < 0x40000000 || (addr & 3) != 0) return false;
+
+    /* Verify OpenSSL stack header: num >= 0 and reasonable */
+    struct stack_header {
+        int num;
+        const void **data;
+    };
+    const struct stack_header *hdr = (const struct stack_header *)st;
+    if (hdr->num < 0 || hdr->num > 65536) return false;
+    if (hdr->num > 0) {
+        uintptr_t data_addr = (uintptr_t)hdr->data;
+        if (data_addr < 0x40000000 || (data_addr & 3) != 0) return false;
+    }
+    return true;
+}
+
 int sk_num(const OPENSSL_STACK *st) {
+    if (!is_sane_stack(st)) return 0;
     return OPENSSL_sk_num(st);
 }
 
 void *sk_value(const OPENSSL_STACK *st, int i) {
+    if (!is_sane_stack(st) || i < 0) return NULL;
     return OPENSSL_sk_value(st, i);
 }
 
 void *sk_pop(OPENSSL_STACK *st) {
+    if (!is_sane_stack(st)) return NULL;
     return OPENSSL_sk_pop(st);
 }
 
 void sk_pop_free(OPENSSL_STACK *st, void (*func)(void *)) {
+    if (!is_sane_stack(st)) return;
     OPENSSL_sk_pop_free(st, (OPENSSL_sk_freefunc)func);
 }
 

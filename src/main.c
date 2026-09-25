@@ -128,7 +128,7 @@ int main(int argc, char *argv[]) {
             /* Check if HTTP pairing server received auth credentials from phone */
             if (http_server_has_received_auth()) {
                 http_server_stop();
-                if (config.is_valid) {
+                if (config_load(&config) && config.is_valid) {
                     worker_start(&config);
                 }
             }

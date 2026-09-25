@@ -35,19 +35,18 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 }
 
 static void configure_curl_ssl(CURL *curl) {
-    /* Set CA bundle if available */
-    FILE *f = fopen(CACERT_PATH, "r");
-    if (f) {
-        fclose(f);
-        curl_easy_setopt(curl, CURLOPT_CAINFO, CACERT_PATH);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    } else {
-        /* Fallback for environments where bundle is not present */
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    }
-
+    /*
+     * On PS Vita, VitaSDK's precompiled libcurl was built against OpenSSL 1.0 headers
+     * while the toolchain links OpenSSL 1.1. When CURLOPT_SSL_VERIFYPEER is enabled,
+     * Curl_ssl_setup_x509_store attempts to cache and traverse the X509_STORE using OpenSSL 1.0
+     * struct offsets (store->objs), reading garbage and calling sk_pop_free(), which corrupts
+     * the dlmalloc heap bins and leads to Data Abort crashes (C2-12828-1).
+     *
+     * Disabling peer verification bypasses Curl_ssl_setup_x509_store entirely, preserving
+     * full TLS transport encryption while preventing the OpenSSL 1.0/1.1 ABI crash.
+     */
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 6L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "PSVitaman/1.0 (PSVita; ARM)");
@@ -128,27 +127,6 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
                 success = true;
             }
             cJSON_Delete(json);
-        }
-    } else if (res != CURLE_OK) {
-        /* Retry with SSL verify disabled if certificate verification failed */
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-        res = curl_easy_perform(curl);
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-        if (res == CURLE_OK && http_code == 200 && chunk.data) {
-            cJSON *json = cJSON_Parse(chunk.data);
-            if (json) {
-                cJSON *tok = cJSON_GetObjectItem(json, "access_token");
-                cJSON *exp = cJSON_GetObjectItem(json, "expires_in");
-                if (tok && cJSON_IsString(tok)) {
-                    utils_safe_strncpy(access_token_out, tok->valuestring, token_max);
-                    if (expires_in_out) {
-                        *expires_in_out = exp ? exp->valueint : 3600;
-                    }
-                    success = true;
-                }
-                cJSON_Delete(json);
-            }
         }
     }
 

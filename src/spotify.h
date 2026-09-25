@@ -6,6 +6,7 @@
 #define PSVITAMAN_SPOTIFY_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define SPOTIFY_TRACK_NAME_MAX   256

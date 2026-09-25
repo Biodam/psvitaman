@@ -13,6 +13,24 @@
 #include <openssl/ui.h>
 #include <openssl/safestack.h>
 
+/* Undefine macros that OpenSSL 1.1 headers use in place of legacy functions */
+#undef EVP_MD_CTX_create
+#undef EVP_MD_CTX_destroy
+#undef SSLeay
+#undef SSL_library_init
+#undef SSL_load_error_strings
+#undef OPENSSL_add_all_algorithms_noconf
+#undef EVP_cleanup
+#undef ENGINE_cleanup
+#undef ERR_free_strings
+#undef CONF_modules_free
+#undef SSL_COMP_free_compression_methods
+#undef SSLv23_client_method
+#undef sk_num
+#undef sk_value
+#undef sk_pop
+#undef sk_pop_free
+
 EVP_MD_CTX *EVP_MD_CTX_create(void) {
     return EVP_MD_CTX_new();
 }

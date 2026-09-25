@@ -4,6 +4,9 @@
 [![VitaDB](https://img.shields.io/badge/VitaDB-Available-blue)](https://vitadb.rinnegatamante.it/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> [!NOTE]
+> **Disclaimer**: This project is entirely vibe coded. Expect retro vibes, cassette tape nostalgia, and community-driven experimentation.
+
 **PSVitaman** is a standalone PlayStation Vita homebrew application (`.vpk`) functioning as a remote controller for Spotify playback. Borrowing the retro aesthetic of classic Sony Walkman portable cassette tape players, it features mechanical-style transport buttons, cassette spools that rotate during active playback, text marquee scrolling for long titles, and dual physical/touchscreen controls.
 
 ---
@@ -39,38 +42,42 @@
 
 ## Setup & Configuration
 
-Because running interactive OAuth in the Vita's legacy browser is fragile, PSVitaman reads Spotify credentials from a standard configuration file:
+PSVitaman supports **zero-config builds** via `.env` as well as runtime configuration via `ux0:data/psvitaman/config.ini`.
 
-`ux0:data/psvitaman/config.ini`
+### Option A: Zero-Config VPK Build (Recommended)
+You can embed your Client ID (and optionally your Refresh Token) directly into the VPK so that no manual configuration is needed on the Vita:
 
-### Step 1: Create a Spotify Developer App
-1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and log in.
-2. Click **Create App**:
-   - **App Name**: `PSVitaman`
-   - **Redirect URI**: `http://127.0.0.1:8888/callback`
-   - **Which API/SDKs are you planning to use?**: Select **Web API**.
-3. Under your app settings, note your **Client ID** and **Client Secret**.
+1. Create a `.env` file in the project root (this file is ignored by git):
+   ```env
+   SPOTIFY_CLIENT_ID=4274a722ea7d42c1b9cc3f3247a7be4a
+   # Optional: To skip any configuration on Vita entirely:
+   # SPOTIFY_REFRESH_TOKEN=your_refresh_token
+   ```
+2. Build `PSVitaman.vpk` (or build in GitHub Actions with Secrets).
+3. Install `PSVitaman.vpk` on your Vita — the on-screen QR code will automatically link directly to your app's Spotify authorization without editing any files!
 
-### Step 2: Obtain your Refresh Token
-You can use the included companion script on your PC:
+### Option B: Obtain Refresh Token via Companion Script
+Run the companion script on your PC:
 ```bash
 python tools/get_token.py
 ```
-This script opens your browser to authorize your app, intercepts the redirect, and prints your ready-to-use `config.ini`.
+This script will:
+- Automatically load `SPOTIFY_CLIENT_ID` from `.env`.
+- Support PKCE (no client secret required).
+- Open your browser to approve Spotify.
+- Automatically save `SPOTIFY_REFRESH_TOKEN` to `.env` (for zero-config builds), save local `config.ini`, or upload directly to your PS Vita via VitaShell FTP.
 
-Alternatively, manually create `config.ini`:
+### Option C: Manual `config.ini` Setup
+If using a generic VPK without baked-in credentials:
+Create `ux0:data/psvitaman/config.ini`:
 ```ini
 [spotify]
-client_id = YOUR_SPOTIFY_CLIENT_ID
-client_secret = YOUR_SPOTIFY_CLIENT_SECRET
+client_id = 4274a722ea7d42c1b9cc3f3247a7be4a
 refresh_token = YOUR_REFRESH_TOKEN
 ```
 
-### Step 3: Copy to PS Vita
-Copy `config.ini` to your PS Vita at `ux0:data/psvitaman/config.ini` using **VitaShell** (via USB or FTP).
-
 > [!NOTE]
-> If `config.ini` is not found on first boot, PSVitaman will automatically create a template file in `ux0:data/psvitaman/` and show an on-screen setup guide.
+> When `SPOTIFY_CLIENT_ID` is embedded at build time, PSVitaman's on-screen QR code and `tools/get_token.py` immediately use it out-of-the-box. If `config.ini` does not exist on the Vita, it will auto-create a template pre-populated with your app's Client ID.
 
 ---
 

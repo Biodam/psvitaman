@@ -10,6 +10,18 @@
 #define CONFIG_DIR_PATH   "ux0:data/psvitaman"
 #define CONFIG_FILE_PATH  "ux0:data/psvitaman/config.ini"
 
+#ifndef DEFAULT_SPOTIFY_CLIENT_ID
+#define DEFAULT_SPOTIFY_CLIENT_ID ""
+#endif
+
+#ifndef DEFAULT_SPOTIFY_CLIENT_SECRET
+#define DEFAULT_SPOTIFY_CLIENT_SECRET ""
+#endif
+
+#ifndef DEFAULT_SPOTIFY_REFRESH_TOKEN
+#define DEFAULT_SPOTIFY_REFRESH_TOKEN ""
+#endif
+
 typedef struct {
     char client_id[128];
     char client_secret[128];

@@ -412,10 +412,14 @@ static void render_setup_guide(const AppConfig *config) {
 
     /* Format QR Code Target URL */
     char qr_target_url[512] = {0};
-    if (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL) {
+    const char *cid = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL)
+                      ? config->client_id
+                      : DEFAULT_SPOTIFY_CLIENT_ID;
+
+    if (strlen(cid) > 0 && strstr(cid, "YOUR_") == NULL) {
         snprintf(qr_target_url, sizeof(qr_target_url),
                  "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
-                 config->client_id);
+                 cid);
     } else {
         snprintf(qr_target_url, sizeof(qr_target_url), "https://developer.spotify.com/dashboard");
     }
@@ -432,7 +436,7 @@ static void render_setup_guide(const AppConfig *config) {
     draw_qr_code(qx + 52, qy + 48, qr_target_url, 210);
 
     if (s_font) {
-        bool has_client_id = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL);
+        bool has_client_id = (strlen(cid) > 0 && strstr(cid, "YOUR_") == NULL);
         const char *badge = has_client_id ? "Direct Spotify OAuth Link" : "Spotify Developer Portal";
         int bw = vita2d_pgf_text_width(s_font, 0.75f, badge);
         vita2d_pgf_draw_text(s_font, (int)(qx + (qw - bw) / 2), (int)(qy + 295), COLOR_TEXT_AMBER, 0.75f, badge);
@@ -486,10 +490,14 @@ static void render_qr_overlay(const AppConfig *config) {
     }
 
     char qr_url[512] = {0};
-    if (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL) {
+    const char *overlay_cid = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL)
+                              ? config->client_id
+                              : DEFAULT_SPOTIFY_CLIENT_ID;
+
+    if (strlen(overlay_cid) > 0 && strstr(overlay_cid, "YOUR_") == NULL) {
         snprintf(qr_url, sizeof(qr_url),
                  "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
-                 config->client_id);
+                 overlay_cid);
     } else {
         snprintf(qr_url, sizeof(qr_url), "https://developer.spotify.com/dashboard");
     }

@@ -65,7 +65,9 @@ void spotify_cleanup(void) {
 bool spotify_refresh_token(const char *client_id, const char *client_secret,
                           const char *refresh_token, char *access_token_out,
                           size_t token_max, int *expires_in_out) {
-    if (!client_id || !client_secret || !refresh_token || !access_token_out)
+    if (!client_id || !refresh_token || !access_token_out)
+        return false;
+    if (strlen(client_id) == 0 || strlen(refresh_token) == 0)
         return false;
 
     CURL *curl = curl_easy_init();
@@ -75,23 +77,30 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
     chunk.data = malloc(1);
     chunk.size = 0;
 
-    /* Build Basic Auth Header */
-    char creds[300];
-    snprintf(creds, sizeof(creds), "%s:%s", client_id, client_secret);
-    char b64_creds[512];
-    utils_base64_encode((const unsigned char *)creds, strlen(creds), b64_creds, sizeof(b64_creds));
-
-    char auth_header[600];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Basic %s", b64_creds);
-
     struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, auth_header);
     headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
 
-    /* Build Post Data */
     char *escaped_token = curl_easy_escape(curl, refresh_token, 0);
     char post_fields[1024];
-    snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s", escaped_token);
+
+    /* If client_secret is provided, use Basic Auth header; otherwise PKCE mode */
+    if (client_secret && strlen(client_secret) > 0 && strstr(client_secret, "YOUR_") == NULL) {
+        char creds[300];
+        snprintf(creds, sizeof(creds), "%s:%s", client_id, client_secret);
+        char b64_creds[512];
+        utils_base64_encode((const unsigned char *)creds, strlen(creds), b64_creds, sizeof(b64_creds));
+
+        char auth_header[600];
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Basic %s", b64_creds);
+        headers = curl_slist_append(headers, auth_header);
+
+        snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s", escaped_token);
+    } else {
+        char *escaped_id = curl_easy_escape(curl, client_id, 0);
+        snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s&client_id=%s",
+                 escaped_token, escaped_id);
+        curl_free(escaped_id);
+    }
     curl_free(escaped_token);
 
     curl_easy_setopt(curl, CURLOPT_URL, "https://accounts.spotify.com/api/token");

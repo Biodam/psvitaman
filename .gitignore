@@ -13,6 +13,8 @@ param.sfo
 config.ini
 *.token
 *.pem.bak
+.env
+.env.*
 
 # IDE & OS files
 .vscode/

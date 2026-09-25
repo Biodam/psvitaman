@@ -48,9 +48,21 @@ bool config_create_template(const char *filepath) {
     fprintf(f, "# Set up your Spotify Developer App credentials below.\n");
     fprintf(f, "# See README.md or run 'python tools/get_token.py' on PC for setup.\n\n");
     fprintf(f, "[spotify]\n");
-    fprintf(f, "client_id = YOUR_SPOTIFY_CLIENT_ID\n");
-    fprintf(f, "client_secret = YOUR_SPOTIFY_CLIENT_SECRET\n");
-    fprintf(f, "refresh_token = YOUR_INITIAL_REFRESH_TOKEN\n");
+    if (strlen(DEFAULT_SPOTIFY_CLIENT_ID) > 0) {
+        fprintf(f, "client_id = %s\n", DEFAULT_SPOTIFY_CLIENT_ID);
+    } else {
+        fprintf(f, "client_id = YOUR_SPOTIFY_CLIENT_ID\n");
+    }
+    if (strlen(DEFAULT_SPOTIFY_CLIENT_SECRET) > 0) {
+        fprintf(f, "client_secret = %s\n", DEFAULT_SPOTIFY_CLIENT_SECRET);
+    } else {
+        fprintf(f, "client_secret = YOUR_SPOTIFY_CLIENT_SECRET\n");
+    }
+    if (strlen(DEFAULT_SPOTIFY_REFRESH_TOKEN) > 0) {
+        fprintf(f, "refresh_token = %s\n", DEFAULT_SPOTIFY_REFRESH_TOKEN);
+    } else {
+        fprintf(f, "refresh_token = YOUR_INITIAL_REFRESH_TOKEN\n");
+    }
 
     fclose(f);
     return true;
@@ -61,11 +73,32 @@ bool config_load(AppConfig *config) {
 
     memset(config, 0, sizeof(AppConfig));
 
+    /* Pre-populate compiled-in defaults if defined at build time */
+    if (strlen(DEFAULT_SPOTIFY_CLIENT_ID) > 0) {
+        strncpy(config->client_id, DEFAULT_SPOTIFY_CLIENT_ID, sizeof(config->client_id) - 1);
+    }
+    if (strlen(DEFAULT_SPOTIFY_CLIENT_SECRET) > 0) {
+        strncpy(config->client_secret, DEFAULT_SPOTIFY_CLIENT_SECRET, sizeof(config->client_secret) - 1);
+    }
+    if (strlen(DEFAULT_SPOTIFY_REFRESH_TOKEN) > 0) {
+        strncpy(config->refresh_token, DEFAULT_SPOTIFY_REFRESH_TOKEN, sizeof(config->refresh_token) - 1);
+    }
+
     FILE *f = fopen(CONFIG_FILE_PATH, "r");
     if (!f) {
-        /* Config file does not exist; create template */
+        /* Config file does not exist; create template with pre-filled defaults */
         config_create_template(CONFIG_FILE_PATH);
         config->template_created = true;
+
+        /* If complete credentials were baked into the build, validate immediately */
+        if (strlen(config->client_id) > 0 &&
+            strlen(config->refresh_token) > 0 &&
+            strstr(config->client_id, "YOUR_") == NULL &&
+            strstr(config->refresh_token, "YOUR_") == NULL) {
+            config->is_valid = true;
+            return true;
+        }
+
         config->is_valid = false;
         return false;
     }
@@ -76,9 +109,22 @@ bool config_load(AppConfig *config) {
         return false;
     }
 
-    /* Check if default placeholder values are still present */
+    /* Fallback to compiled defaults if fields are empty or placeholders in config.ini */
+    if ((strlen(config->client_id) == 0 || strstr(config->client_id, "YOUR_") != NULL) &&
+        strlen(DEFAULT_SPOTIFY_CLIENT_ID) > 0) {
+        strncpy(config->client_id, DEFAULT_SPOTIFY_CLIENT_ID, sizeof(config->client_id) - 1);
+    }
+    if ((strlen(config->client_secret) == 0 || strstr(config->client_secret, "YOUR_") != NULL) &&
+        strlen(DEFAULT_SPOTIFY_CLIENT_SECRET) > 0) {
+        strncpy(config->client_secret, DEFAULT_SPOTIFY_CLIENT_SECRET, sizeof(config->client_secret) - 1);
+    }
+    if ((strlen(config->refresh_token) == 0 || strstr(config->refresh_token, "YOUR_") != NULL) &&
+        strlen(DEFAULT_SPOTIFY_REFRESH_TOKEN) > 0) {
+        strncpy(config->refresh_token, DEFAULT_SPOTIFY_REFRESH_TOKEN, sizeof(config->refresh_token) - 1);
+    }
+
+    /* Check if required credentials are valid */
     if (strlen(config->client_id) > 0 &&
-        strlen(config->client_secret) > 0 &&
         strlen(config->refresh_token) > 0 &&
         strstr(config->client_id, "YOUR_") == NULL &&
         strstr(config->refresh_token, "YOUR_") == NULL) {

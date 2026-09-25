@@ -103,6 +103,7 @@ target_link_libraries(psvitaman
   png
   jpeg
   z
+  zstd
   m
   pthread
   SceAppMgr_stub

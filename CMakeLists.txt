@@ -88,6 +88,7 @@ set(SOURCES
   src/worker.c
   src/input.c
   src/ui.c
+  src/http_server.c
   src/qrcodegen.c
   src/compat_openssl.c
 )

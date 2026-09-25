@@ -14,6 +14,7 @@
 #include "worker.h"
 #include "input.h"
 #include "ui.h"
+#include "http_server.h"
 
 #if defined(__psp2__) || defined(__VITA__)
 #include <psp2/kernel/processmgr.h>
@@ -60,6 +61,8 @@ int main(int argc, char *argv[]) {
 
     if (config.is_valid) {
         worker_start(&config);
+    } else {
+        http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
     }
 
 #if defined(__psp2__) || defined(__VITA__)
@@ -122,10 +125,19 @@ int main(int argc, char *argv[]) {
             }
 #endif
         } else {
+            /* Check if HTTP pairing server received auth credentials from phone */
+            if (http_server_has_received_auth()) {
+                http_server_stop();
+                if (config.is_valid) {
+                    worker_start(&config);
+                }
+            }
+
             /* If in Setup Mode, allow pressing START to reload config */
 #if defined(__psp2__) || defined(__VITA__)
             if (input.pressed_buttons & SCE_CTRL_START) {
                 if (config_load(&config) && config.is_valid) {
+                    http_server_stop();
                     worker_start(&config);
                 }
             }
@@ -149,6 +161,9 @@ int main(int argc, char *argv[]) {
     }
 
     /* Shutdown Sequence */
+    if (http_server_is_running()) {
+        http_server_stop();
+    }
     if (config.is_valid) {
         worker_stop();
     }

@@ -68,6 +68,33 @@ bool config_create_template(const char *filepath) {
     return true;
 }
 
+bool config_save(const AppConfig *config) {
+    if (!config) return false;
+
+#if defined(__psp2__) || defined(__VITA__)
+    sceIoMkdir(CONFIG_DIR_PATH, 0777);
+#else
+    #ifdef _WIN32
+    _mkdir(CONFIG_DIR_PATH);
+    #else
+    mkdir(CONFIG_DIR_PATH, 0777);
+    #endif
+#endif
+
+    FILE *f = fopen(CONFIG_FILE_PATH, "w");
+    if (!f) return false;
+
+    fprintf(f, "# PSVitaman - Spotify Remote Configuration\n");
+    fprintf(f, "# Generated automatically via QR Phone Pairing\n\n");
+    fprintf(f, "[spotify]\n");
+    fprintf(f, "client_id = %s\n", config->client_id);
+    fprintf(f, "client_secret = %s\n", config->client_secret);
+    fprintf(f, "refresh_token = %s\n", config->refresh_token);
+
+    fclose(f);
+    return true;
+}
+
 bool config_load(AppConfig *config) {
     if (!config) return false;
 

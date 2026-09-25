@@ -5,6 +5,7 @@
 #include "ui.h"
 #include "utils.h"
 #include "qrcodegen.h"
+#include "http_server.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -406,22 +407,25 @@ static void render_setup_guide(const AppConfig *config) {
 
     if (s_font) {
         vita2d_pgf_draw_text(s_font, 70, 56, COLOR_TEXT_GREEN, 1.25f, "PSVITAMAN • SPOTIFY SETUP & PAIRING");
-        vita2d_pgf_draw_text(s_font, 70, 80, COLOR_TEXT_MUTED, 0.75f, "Scan the QR code with your phone camera to authorize Spotify remote control");
+        vita2d_pgf_draw_text(s_font, 70, 80, COLOR_TEXT_MUTED, 0.75f, "Scan the QR code with your phone camera to pair your Spotify account");
         vita2d_draw_line(60, 92, 900, 92, COLOR_BORDER_LIGHT);
     }
 
     /* Format QR Code Target URL */
     char qr_target_url[512] = {0};
+    char vita_ip[32] = {0};
+    bool has_ip = http_server_get_local_ip(vita_ip, sizeof(vita_ip));
+
     const char *cid = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL)
                       ? config->client_id
                       : DEFAULT_SPOTIFY_CLIENT_ID;
 
     if (strlen(cid) > 0 && strstr(cid, "YOUR_") == NULL) {
         snprintf(qr_target_url, sizeof(qr_target_url),
-                 "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
-                 cid);
+                 "https://biodam.github.io/psvitaman/?ip=%s&client_id=%s",
+                 has_ip ? vita_ip : "127.0.0.1", cid);
     } else {
-        snprintf(qr_target_url, sizeof(qr_target_url), "https://developer.spotify.com/dashboard");
+        snprintf(qr_target_url, sizeof(qr_target_url), "https://biodam.github.io/psvitaman/");
     }
 
     /* Left Column: QR Code Card */
@@ -436,13 +440,12 @@ static void render_setup_guide(const AppConfig *config) {
     draw_qr_code(qx + 52, qy + 48, qr_target_url, 210);
 
     if (s_font) {
-        bool has_client_id = (strlen(cid) > 0 && strstr(cid, "YOUR_") == NULL);
-        const char *badge = has_client_id ? "Direct Spotify OAuth Link" : "Spotify Developer Portal";
+        const char *badge = "Direct Phone OAuth Bridge";
         int bw = vita2d_pgf_text_width(s_font, 0.75f, badge);
         vita2d_pgf_draw_text(s_font, (int)(qx + (qw - bw) / 2), (int)(qy + 295), COLOR_TEXT_AMBER, 0.75f, badge);
         vita2d_pgf_draw_text(s_font, (int)(qx + 35), (int)(qy + 325), COLOR_TEXT_WHITE, 0.72f, "Point phone camera at QR code");
         vita2d_pgf_draw_text(s_font, (int)(qx + 30), (int)(qy + 350), COLOR_TEXT_MUTED, 0.70f, "Tap the notification to open link");
-        vita2d_pgf_draw_text(s_font, (int)(qx + 45), (int)(qy + 375), COLOR_TEXT_GREEN, 0.70f, "[SELECT] Toggle Target URL");
+        vita2d_pgf_draw_text(s_font, (int)(qx + 40), (int)(qy + 375), COLOR_TEXT_GREEN, 0.70f, "No PC or file copy needed!");
     }
 
     /* Right Column: Setup Instructions Card */
@@ -450,29 +453,33 @@ static void render_setup_guide(const AppConfig *config) {
     draw_beveled_box(rx, ry, rw, rh, RGBA8(32, 38, 50, 255), COLOR_BORDER_LIGHT, COLOR_BORDER_DARK);
 
     if (s_font) {
-        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 32), COLOR_TEXT_GREEN, 1.0f, "SETUP INSTRUCTIONS");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 32), COLOR_TEXT_GREEN, 1.0f, "HOW IT WORKS (100% PHONE-ONLY)");
 
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 70), COLOR_TEXT_WHITE, 0.85f,
-                             "1. Scan the QR code to open Spotify Authorization.");
+                             "1. Ensure your phone is on the same Wi-Fi as PS Vita.");
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 105), COLOR_TEXT_WHITE, 0.85f,
-                             "2. Log in and tap 'Agree' to authorize PSVitaman.");
+                             "2. Scan the QR code to open Spotify Authorization.");
         vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 140), COLOR_TEXT_WHITE, 0.85f,
-                             "3. Save credentials into the configuration file:");
-        vita2d_pgf_draw_text(s_font, (int)(rx + 45), (int)(ry + 168), COLOR_TEXT_GREEN, 0.85f,
-                             "ux0:data/psvitaman/config.ini");
-
-        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 205), COLOR_TEXT_MUTED, 0.80f,
-                             "Tip: You can also run 'python tools/get_token.py' on PC");
-        vita2d_pgf_draw_text(s_font, (int)(rx + 45), (int)(ry + 230), COLOR_TEXT_MUTED, 0.80f,
-                             "to generate your refresh_token automatically in 60s.");
+                             "3. Log in & tap 'Agree' — your phone sends the token.");
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 175), COLOR_TEXT_WHITE, 0.85f,
+                             "4. PSVitaman detects the token and starts playback!");
 
         /* Status Mini-Panel */
-        draw_beveled_box(rx + 20, ry + 265, rw - 40, 68, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
-        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 292), COLOR_LABEL_RED, 0.80f, "• STATUS: Configuration required");
-        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 318), COLOR_TEXT_MUTED, 0.75f, "Edit config.ini via VitaShell USB/FTP");
+        draw_beveled_box(rx + 20, ry + 215, rw - 40, 110, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
+        vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 242), COLOR_TEXT_GREEN, 0.85f, "• PAIRING SERVER: Active on port 8888");
 
-        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 368), COLOR_TEXT_GREEN, 0.90f,
-                             "Press [START] on Vita to reload config once saved.");
+        char ip_label[128];
+        if (has_ip) {
+            snprintf(ip_label, sizeof(ip_label), "Vita IP: http://%s:8888", vita_ip);
+            vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 270), COLOR_TEXT_WHITE, 0.82f, ip_label);
+            vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 298), COLOR_TEXT_MUTED, 0.72f, "Waiting for phone connection...");
+        } else {
+            vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 270), COLOR_LABEL_RED, 0.82f, "Wi-Fi Disconnected!");
+            vita2d_pgf_draw_text(s_font, (int)(rx + 35), (int)(ry + 298), COLOR_TEXT_MUTED, 0.72f, "Please connect to Wi-Fi in Vita Settings");
+        }
+
+        vita2d_pgf_draw_text(s_font, (int)(rx + 25), (int)(ry + 368), COLOR_TEXT_GREEN, 0.85f,
+                             "Press [START] on Vita to reload config manually if needed.");
     }
 }
 
@@ -490,16 +497,19 @@ static void render_qr_overlay(const AppConfig *config) {
     }
 
     char qr_url[512] = {0};
+    char vita_ip[32] = {0};
+    bool has_ip = http_server_get_local_ip(vita_ip, sizeof(vita_ip));
+
     const char *overlay_cid = (strlen(config->client_id) > 0 && strstr(config->client_id, "YOUR_") == NULL)
                               ? config->client_id
                               : DEFAULT_SPOTIFY_CLIENT_ID;
 
     if (strlen(overlay_cid) > 0 && strstr(overlay_cid, "YOUR_") == NULL) {
         snprintf(qr_url, sizeof(qr_url),
-                 "https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=http%%3A%%2F%%2F127.0.0.1%%3A8888%%2Fcallback&scope=user-read-playback-state%%20user-modify-playback-state",
-                 overlay_cid);
+                 "https://biodam.github.io/psvitaman/?ip=%s&client_id=%s",
+                 has_ip ? vita_ip : "127.0.0.1", overlay_cid);
     } else {
-        snprintf(qr_url, sizeof(qr_url), "https://developer.spotify.com/dashboard");
+        snprintf(qr_url, sizeof(qr_url), "https://biodam.github.io/psvitaman/");
     }
 
     /* Draw Centered QR Code */
@@ -507,9 +517,9 @@ static void render_qr_overlay(const AppConfig *config) {
 
     if (s_font) {
         vita2d_pgf_draw_text(s_font, (int)(mx + 60), (int)(my + 345), COLOR_TEXT_WHITE, 0.85f,
-                             "Scan with your phone to open Spotify controls");
+                             "Scan with your phone to pair Spotify account");
         vita2d_pgf_draw_text(s_font, (int)(mx + 90), (int)(my + 375), COLOR_TEXT_AMBER, 0.80f,
-                             "Target: Spotify Web API OAuth Portal");
+                             "Target: PSVitaman Web Gateway");
 
         draw_beveled_box(mx + 40, my + 410, mw - 80, 48, RGBA8(20, 24, 32, 255), COLOR_BORDER_DARK, COLOR_BORDER_LIGHT);
         vita2d_pgf_draw_text(s_font, (int)(mx + 70), (int)(my + 440), COLOR_TEXT_GREEN, 0.85f,

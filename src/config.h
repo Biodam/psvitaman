@@ -37,4 +37,7 @@ bool config_load(AppConfig *config);
 /* Create template config.ini with instructions */
 bool config_create_template(const char *filepath);
 
+/* Save configuration to ux0:data/psvitaman/config.ini */
+bool config_save(const AppConfig *config);
+
 #endif /* PSVITAMAN_CONFIG_H */

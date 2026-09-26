@@ -82,22 +82,41 @@ const SSL_METHOD *SSLv23_client_method(void) {
 #include <stdint.h>
 #include <stdbool.h>
 
+/*
+ * OpenSSL 1.1 internal stack representation (crypto/stack/stack.c):
+ * struct stack_st {
+ *     int num;
+ *     const void **data;
+ *     int sorted;
+ *     size_t num_alloc;
+ *     int (*comp)(const void *, const void *);
+ * };
+ */
+struct openssl11_stack_st {
+    int num;
+    const void **data;
+    int sorted;
+    size_t num_alloc;
+    int (*comp)(const void *, const void *);
+};
+
 static inline bool is_sane_stack(const OPENSSL_STACK *st) {
     if (!st) return false;
     uintptr_t addr = (uintptr_t)st;
-    if (addr < 0x40000000 || (addr & 3) != 0) return false;
+    /* On PS Vita userland heap is mapped between 0x80000000 and 0x90000000 */
+    if (addr < 0x80000000 || (addr & 3) != 0) return false;
 
-    /* Verify OpenSSL stack header: num >= 0 and reasonable */
-    struct stack_header {
-        int num;
-        const void **data;
-    };
-    const struct stack_header *hdr = (const struct stack_header *)st;
+    const struct openssl11_stack_st *hdr = (const struct openssl11_stack_st *)st;
     if (hdr->num < 0 || hdr->num > 65536) return false;
-    if (hdr->num > 0) {
+    if (hdr->num_alloc < (size_t)hdr->num || hdr->num_alloc > 65536) return false;
+    if (hdr->sorted != 0 && hdr->sorted != 1) return false;
+
+    if (hdr->num > 0 || hdr->num_alloc > 0) {
+        if (!hdr->data) return false;
         uintptr_t data_addr = (uintptr_t)hdr->data;
-        if (data_addr < 0x40000000 || (data_addr & 3) != 0) return false;
+        if (data_addr < 0x80000000 || (data_addr & 3) != 0) return false;
     }
+
     return true;
 }
 

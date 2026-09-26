@@ -16,7 +16,6 @@
 #include "http_server.h"
 #include "logger.h"
 #include "error.h"
-#include "root_certs.h"
 
 #ifndef GIT_COMMIT_HASH
 #define GIT_COMMIT_HASH "dev"
@@ -27,8 +26,6 @@
 #include <psp2/sysmodule.h>
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
-#include <psp2/net/http.h>
-#include <psp2/libssl.h>
 #include <psp2/ctrl.h>
 #include <vita2d.h>
 
@@ -40,15 +37,19 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
+    /* 1. Initialize Logger & Diagnostics immediately */
+    log_init("ux0:data/psvitaman/psvitaman.log");
+    error_init();
+    LOG_INFO("==================================================");
+    LOG_INFO(" PSVitaman initializing... [commit: %s]", GIT_COMMIT_HASH);
+    LOG_INFO("==================================================");
+
 #if defined(__psp2__) || defined(__VITA__)
-    /* 1. Load System Modules */
+    /* 2. Load System Modules */
     sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTP);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
     sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
 
-    /* 2. Initialize SceNet Stack */
+    /* 3. Initialize SceNet Stack */
     SceNetInitParam net_param;
     net_param.memory = s_net_memory;
     net_param.size = sizeof(s_net_memory);
@@ -56,25 +57,10 @@ int main(int argc, char *argv[]) {
     sceNetInit(&net_param);
     sceNetCtlInit();
 
-    /* 3. Initialize SceSsl & SceHttp Native Stacks with Embedded Root CAs */
-    sceSslInit(1024 * 1024);
-    sceHttpInit(1024 * 1024);
-    root_certs_load();
-    sceHttpsEnableOption(
-        SCE_HTTPS_FLAG_SERVER_VERIFY |
-        SCE_HTTPS_FLAG_CN_CHECK |
-        SCE_HTTPS_FLAG_KNOWN_CA_CHECK
-    );
-
     /* 4. Initialize vita2d Graphics */
     vita2d_init();
     vita2d_set_clear_color(RGBA8(22, 26, 34, 255));
 #endif
-
-    /* 5. Initialize Network & Diagnostics */
-    log_init("ux0:data/psvitaman/psvitaman.log");
-    error_init();
-    LOG_INFO("PSVitaman initializing... [commit: %s]", GIT_COMMIT_HASH);
 
     spotify_init();
     input_init();
@@ -256,14 +242,8 @@ int main(int argc, char *argv[]) {
 
 #if defined(__psp2__) || defined(__VITA__)
     vita2d_fini();
-    root_certs_unload();
-    sceHttpTerm();
-    sceSslTerm();
     sceNetCtlTerm();
     sceNetTerm();
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTPS);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_SSL);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTP);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
     sceKernelExitProcess(0);

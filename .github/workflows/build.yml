@@ -23,9 +23,12 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
-          mkdir build
+          git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+          vdpm install mbedtls || true
+          mkdir -p build
           cd build
-          cmake -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake ..
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          cmake -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake -DGIT_COMMIT_HASH="${SHORT_SHA}" ..
 
       - name: Build PSVitaman.vpk
         run: |

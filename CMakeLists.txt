@@ -79,13 +79,15 @@ if(NOT "${CFG_SPOTIFY_REFRESH_TOKEN}" STREQUAL "")
 endif()
 
 # Git Commit Hash Injection
-execute_process(
-  COMMAND git rev-parse --short HEAD
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  OUTPUT_VARIABLE GIT_COMMIT_HASH
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  ERROR_QUIET
-)
+if(NOT GIT_COMMIT_HASH)
+  execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+endif()
 if(NOT GIT_COMMIT_HASH)
   set(GIT_COMMIT_HASH "dev")
 endif()
@@ -106,7 +108,6 @@ set(SOURCES
   src/qrcodegen.c
   src/logger.c
   src/error.c
-  src/root_certs.c
 )
 
 add_executable(psvitaman ${SOURCES})
@@ -117,6 +118,9 @@ target_link_libraries(psvitaman
   jpeg
   z
   zstd
+  mbedtls
+  mbedx509
+  mbedcrypto
   m
   pthread
   SceAppMgr_stub
@@ -127,8 +131,6 @@ target_link_libraries(psvitaman
   SceSysmodule_stub
   SceNet_stub
   SceNetCtl_stub
-  SceHttp_stub
-  SceSsl_stub
   ScePgf_stub
   SceCommonDialog_stub
   ScePower_stub

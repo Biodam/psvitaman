@@ -1,8 +1,8 @@
 /**
  * PSVitaman - Spotify Web API Client Implementation
  * 
- * Uses PS Vita native SceHttp / SceSsl for 100% reliable hardware-accelerated
- * HTTPS communication without OpenSSL ABI incompatibility or memory leaks.
+ * Uses MbedTLS over SceNet sockets for modern, secure HTTPS communication
+ * with full TLS 1.2/1.3 and AES-GCM ciphersuite support.
  */
 
 #include "spotify.h"
@@ -16,9 +16,20 @@
 #include <string.h>
 
 #if defined(__psp2__) || defined(__VITA__)
-#include <psp2/net/http.h>
 #include <psp2/net/net.h>
-#include <psp2/libssl.h>
+#include <psp2/net/netctl.h>
+#include <mbedtls/ssl.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/x509_crt.h>
+#include <mbedtls/error.h>
+
+#ifndef MBEDTLS_ERR_NET_SEND_FAILED
+#define MBEDTLS_ERR_NET_SEND_FAILED -0x004E
+#endif
+#ifndef MBEDTLS_ERR_NET_RECV_FAILED
+#define MBEDTLS_ERR_NET_RECV_FAILED -0x004C
+#endif
 #else
 #include <curl/curl.h>
 #endif
@@ -36,15 +47,195 @@ typedef struct {
 
 #if defined(__psp2__) || defined(__VITA__)
 
-static int ssl_callback(unsigned int verifyErr, void * const sslCert[], int certNum, void *userArg) {
-    (void)sslCert;
-    (void)userArg;
-    if (verifyErr == 0) {
-        LOG_INFO("ssl_callback: SSL certificate verified and trusted! (chain len: %d)", certNum);
-    } else {
-        LOG_WARN("ssl_callback: cert verify code 0x%08x (chain len: %d)", verifyErr, certNum);
+static mbedtls_x509_crt s_cacert;
+static mbedtls_entropy_context s_entropy;
+static mbedtls_ctr_drbg_context s_ctr_drbg;
+static bool s_mbedtls_ready = false;
+
+static int mbedtls_net_send_cb(void *ctx, const unsigned char *buf, size_t len) {
+    int fd = *(int *)ctx;
+    int ret = sceNetSend(fd, buf, (unsigned int)len, 0);
+    if (ret < 0) {
+        int err = *sceNetErrnoLoc();
+        if (err == SCE_NET_EAGAIN || err == SCE_NET_EWOULDBLOCK) {
+            return MBEDTLS_ERR_SSL_WANT_WRITE;
+        }
+        return MBEDTLS_ERR_NET_SEND_FAILED;
     }
-    return 0;
+    return ret;
+}
+
+static int mbedtls_net_recv_cb(void *ctx, unsigned char *buf, size_t len) {
+    int fd = *(int *)ctx;
+    int ret = sceNetRecv(fd, buf, (unsigned int)len, 0);
+    if (ret < 0) {
+        int err = *sceNetErrnoLoc();
+        if (err == SCE_NET_EAGAIN || err == SCE_NET_EWOULDBLOCK) {
+            return MBEDTLS_ERR_SSL_WANT_READ;
+        }
+        if (err == SCE_NET_ETIMEDOUT) {
+            return MBEDTLS_ERR_SSL_TIMEOUT;
+        }
+        return MBEDTLS_ERR_NET_RECV_FAILED;
+    }
+    return ret;
+}
+
+static int safe_strncasecmp(const char *s1, const char *s2, size_t n) {
+    while (n && *s1 && *s2) {
+        char c1 = (*s1 >= 'A' && *s1 <= 'Z') ? (char)(*s1 + 32) : *s1;
+        char c2 = (*s2 >= 'A' && *s2 <= 'Z') ? (char)(*s2 + 32) : *s2;
+        if (c1 != c2) return (unsigned char)c1 - (unsigned char)c2;
+        s1++;
+        s2++;
+        n--;
+    }
+    return n ? ((unsigned char)*s1 - (unsigned char)*s2) : 0;
+}
+
+static const char *find_case_insensitive(const char *haystack, const char *needle) {
+    if (!haystack || !needle) return NULL;
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0) return haystack;
+    for (const char *h = haystack; *h; h++) {
+        if (safe_strncasecmp(h, needle, needle_len) == 0) {
+            return h;
+        }
+    }
+    return NULL;
+}
+
+static char *decode_chunked_body(const char *src, size_t src_len, size_t *out_len) {
+    char *dest = malloc(src_len + 1);
+    if (!dest) {
+        if (out_len) *out_len = 0;
+        return NULL;
+    }
+
+    const char *p = src;
+    const char *end = src + src_len;
+    size_t written = 0;
+
+    while (p < end) {
+        char *chunk_end = NULL;
+        unsigned long chunk_size = strtoul(p, &chunk_end, 16);
+        if (chunk_end == p) break;
+
+        p = chunk_end;
+        while (p < end && (*p == ' ' || *p == '\t' || *p == '\r')) p++;
+        if (p < end && *p == '\n') p++;
+
+        if (chunk_size == 0) {
+            break;
+        }
+
+        if (p + chunk_size > end) {
+            chunk_size = (size_t)(end - p);
+        }
+
+        memcpy(dest + written, p, chunk_size);
+        written += chunk_size;
+        p += chunk_size;
+
+        if (p < end && *p == '\r') p++;
+        if (p < end && *p == '\n') p++;
+    }
+
+    dest[written] = '\0';
+    if (out_len) *out_len = written;
+    return dest;
+}
+
+static bool parse_url(const char *url, char *host, size_t host_size, int *port,
+                      char *path, size_t path_size, bool *is_https) {
+    if (!url || !host || !port || !path || !is_https) return false;
+    *is_https = true;
+    *port = 443;
+
+    const char *p = url;
+    if (strncmp(p, "https://", 8) == 0) {
+        *is_https = true;
+        *port = 443;
+        p += 8;
+    } else if (strncmp(p, "http://", 7) == 0) {
+        *is_https = false;
+        *port = 80;
+        p += 7;
+    }
+
+    const char *slash = strchr(p, '/');
+    const char *colon = strchr(p, ':');
+
+    if (colon && (!slash || colon < slash)) {
+        size_t hlen = colon - p;
+        if (hlen >= host_size) hlen = host_size - 1;
+        strncpy(host, p, hlen);
+        host[hlen] = '\0';
+        *port = atoi(colon + 1);
+    } else if (slash) {
+        size_t hlen = slash - p;
+        if (hlen >= host_size) hlen = host_size - 1;
+        strncpy(host, p, hlen);
+        host[hlen] = '\0';
+    } else {
+        strncpy(host, p, host_size - 1);
+        host[host_size - 1] = '\0';
+    }
+
+    if (slash) {
+        strncpy(path, slash, path_size - 1);
+        path[path_size - 1] = '\0';
+    } else {
+        strncpy(path, "/", path_size - 1);
+        path[path_size - 1] = '\0';
+    }
+
+    return true;
+}
+
+static int connect_socket(const char *host, int port) {
+    SceNetInAddr addr;
+    memset(&addr, 0, sizeof(addr));
+
+    if (sceNetInetPton(SCE_NET_AF_INET, host, &addr) <= 0) {
+        int rid = sceNetResolverCreate("psvitaman_resolver", NULL, 0);
+        if (rid < 0) {
+            LOG_ERROR("sceNetResolverCreate failed: 0x%08x", rid);
+            return -1;
+        }
+
+        int res = sceNetResolverStartNtoa(rid, host, &addr, 5000000, 3, 0);
+        sceNetResolverDestroy(rid);
+        if (res < 0) {
+            LOG_ERROR("DNS resolution failed for '%s': 0x%08x", host, res);
+            return -1;
+        }
+    }
+
+    int sock = sceNetSocket("spotify_sock", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
+    if (sock < 0) {
+        LOG_ERROR("sceNetSocket failed: 0x%08x", sock);
+        return -1;
+    }
+
+    int timeout_usec = 8 * 1000 * 1000;
+    sceNetSetsockopt(sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_RCVTIMEO, &timeout_usec, sizeof(timeout_usec));
+    sceNetSetsockopt(sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_SNDTIMEO, &timeout_usec, sizeof(timeout_usec));
+
+    SceNetSockaddrIn sin;
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = SCE_NET_AF_INET;
+    sin.sin_port = sceNetHtons((unsigned short)port);
+    sin.sin_addr = addr;
+
+    int ret = sceNetConnect(sock, (SceNetSockaddr *)&sin, sizeof(sin));
+    if (ret < 0) {
+        LOG_ERROR("sceNetConnect failed to %s:%d: 0x%08x", host, port, ret);
+        sceNetSocketClose(sock);
+        return -1;
+    }
+
+    return sock;
 }
 
 static bool do_http_request(const char *url, HttpMethodType method, const char *auth_header,
@@ -52,93 +243,286 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
                            HttpResponseBuffer *out_buf, int *out_http_status) {
     if (!url) return false;
     if (out_http_status) *out_http_status = 0;
+    if (out_buf) {
+        out_buf->data = NULL;
+        out_buf->size = 0;
+    }
 
-    int tmpl = sceHttpCreateTemplate("PSVitaman/1.0 libhttp/3.65 (PS Vita)", SCE_HTTP_VERSION_1_1, SCE_FALSE);
-    if (tmpl < 0) {
-        LOG_ERROR("sceHttpCreateTemplate failed: 0x%08x", tmpl);
+    if (!s_mbedtls_ready) {
+        LOG_ERROR("do_http_request: mbedtls is not initialized");
         return false;
     }
 
-    sceHttpsSetSslCallback(tmpl, ssl_callback, NULL);
-    sceHttpsEnableOption(
-        SCE_HTTPS_FLAG_SERVER_VERIFY |
-        SCE_HTTPS_FLAG_CN_CHECK |
-        SCE_HTTPS_FLAG_KNOWN_CA_CHECK
+    char host[128] = {0};
+    char path[512] = {0};
+    int port = 443;
+    bool is_https = true;
+    if (!parse_url(url, host, sizeof(host), &port, path, sizeof(path), &is_https)) {
+        LOG_ERROR("do_http_request: failed to parse URL '%s'", url);
+        return false;
+    }
+
+    int sock = connect_socket(host, port);
+    if (sock < 0) {
+        LOG_ERROR("do_http_request: failed to connect TCP socket to %s:%d", host, port);
+        return false;
+    }
+
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    bool ssl_active = false;
+
+    if (is_https) {
+        int ret = mbedtls_ssl_config_defaults(&conf,
+                                             MBEDTLS_SSL_IS_CLIENT,
+                                             MBEDTLS_SSL_TRANSPORT_STREAM,
+                                             MBEDTLS_SSL_PRESET_DEFAULT);
+        if (ret != 0) {
+            char err_buf[128];
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+            LOG_ERROR("mbedtls_ssl_config_defaults failed: -0x%04x (%s)", -ret, err_buf);
+            sceNetSocketClose(sock);
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            return false;
+        }
+
+        mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+        mbedtls_ssl_conf_ca_chain(&conf, &s_cacert, NULL);
+        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &s_ctr_drbg);
+
+        ret = mbedtls_ssl_setup(&ssl, &conf);
+        if (ret != 0) {
+            char err_buf[128];
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+            LOG_ERROR("mbedtls_ssl_setup failed: -0x%04x (%s)", -ret, err_buf);
+            sceNetSocketClose(sock);
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            return false;
+        }
+
+        ret = mbedtls_ssl_set_hostname(&ssl, host);
+        if (ret != 0) {
+            char err_buf[128];
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+            LOG_ERROR("mbedtls_ssl_set_hostname failed: -0x%04x (%s)", -ret, err_buf);
+            sceNetSocketClose(sock);
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            return false;
+        }
+
+        mbedtls_ssl_set_bio(&ssl, &sock, mbedtls_net_send_cb, mbedtls_net_recv_cb, NULL);
+
+        while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
+            if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                char err_buf[128];
+                mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+                LOG_ERROR("mbedtls_ssl_handshake failed with %s: -0x%04x (%s)", host, -ret, err_buf);
+                sceNetSocketClose(sock);
+                mbedtls_ssl_free(&ssl);
+                mbedtls_ssl_config_free(&conf);
+                return false;
+            }
+        }
+
+        uint32_t vrfy_flags = mbedtls_ssl_get_verify_result(&ssl);
+        if (vrfy_flags != 0) {
+            char vrfy_buf[512];
+            mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", vrfy_flags);
+            LOG_ERROR("SSL certificate verification failed for %s (flags 0x%08x):\n%s", host, vrfy_flags, vrfy_buf);
+            mbedtls_ssl_close_notify(&ssl);
+            sceNetSocketClose(sock);
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            return false;
+        }
+
+        LOG_INFO("TLS connection verified with %s (%s, %s)",
+                 host, mbedtls_ssl_get_version(&ssl), mbedtls_ssl_get_ciphersuite(&ssl));
+        ssl_active = true;
+    }
+
+    const char *method_str = "GET";
+    if (method == HTTP_REQ_POST) method_str = "POST";
+    else if (method == HTTP_REQ_PUT) method_str = "PUT";
+
+    char content_length_hdr[64] = {0};
+    if (post_data && post_len > 0) {
+        snprintf(content_length_hdr, sizeof(content_length_hdr), "Content-Length: %zu\r\n", post_len);
+    } else if (method == HTTP_REQ_POST || method == HTTP_REQ_PUT) {
+        snprintf(content_length_hdr, sizeof(content_length_hdr), "Content-Length: 0\r\n");
+    }
+
+    char req_buf[2048];
+    int req_hdr_len = snprintf(req_buf, sizeof(req_buf),
+        "%s %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "User-Agent: PSVitaman/1.0 (PS Vita; ARM)\r\n"
+        "Accept: application/json\r\n"
+        "Connection: close\r\n"
+        "%s%s%s"
+        "%s%s%s"
+        "%s"
+        "\r\n",
+        method_str, path, host,
+        (auth_header && *auth_header) ? "Authorization: " : "",
+        (auth_header && *auth_header) ? auth_header : "",
+        (auth_header && *auth_header) ? "\r\n" : "",
+        (content_type && *content_type) ? "Content-Type: " : "",
+        (content_type && *content_type) ? content_type : "",
+        (content_type && *content_type) ? "\r\n" : "",
+        content_length_hdr
     );
 
-    sceHttpSetConnectTimeOut(tmpl, 8 * 1000 * 1000);
-    sceHttpSetSendTimeOut(tmpl, 8 * 1000 * 1000);
-    sceHttpSetRecvTimeOut(tmpl, 8 * 1000 * 1000);
-    sceHttpSetResolveTimeOut(tmpl, 8 * 1000 * 1000);
-
-    int conn = sceHttpCreateConnectionWithURL(tmpl, url, SCE_FALSE);
-    if (conn < 0) {
-        LOG_ERROR("sceHttpCreateConnectionWithURL failed for %s: 0x%08x", url, conn);
-        sceHttpDeleteTemplate(tmpl);
-        return false;
-    }
-    sceHttpsSetSslCallback(conn, ssl_callback, NULL);
-
-    int sce_method = SCE_HTTP_METHOD_GET;
-    if (method == HTTP_REQ_POST) sce_method = SCE_HTTP_METHOD_POST;
-    else if (method == HTTP_REQ_PUT) sce_method = SCE_HTTP_METHOD_PUT;
-
-    int req = sceHttpCreateRequestWithURL(conn, sce_method, url, post_len);
-    if (req < 0) {
-        LOG_ERROR("sceHttpCreateRequestWithURL failed for %s: 0x%08x", url, req);
-        sceHttpDeleteConnection(conn);
-        sceHttpDeleteTemplate(tmpl);
-        return false;
-    }
-    sceHttpsSetSslCallback(req, ssl_callback, NULL);
-
-    if (auth_header && strlen(auth_header) > 0) {
-        sceHttpAddRequestHeader(req, "Authorization", auth_header, SCE_HTTP_HEADER_ADD);
-    }
-    if (content_type && strlen(content_type) > 0) {
-        sceHttpAddRequestHeader(req, "Content-Type", content_type, SCE_HTTP_HEADER_ADD);
+    /* Send Request Headers */
+    size_t total_sent = 0;
+    while (total_sent < (size_t)req_hdr_len) {
+        int sent = 0;
+        if (ssl_active) {
+            sent = mbedtls_ssl_write(&ssl, (const unsigned char *)req_buf + total_sent, req_hdr_len - total_sent);
+        } else {
+            sent = sceNetSend(sock, req_buf + total_sent, req_hdr_len - total_sent, 0);
+        }
+        if (sent <= 0) {
+            if (sent == MBEDTLS_ERR_SSL_WANT_READ || sent == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+            LOG_ERROR("Failed sending HTTP request headers to %s", host);
+            if (ssl_active) mbedtls_ssl_close_notify(&ssl);
+            sceNetSocketClose(sock);
+            mbedtls_ssl_free(&ssl);
+            mbedtls_ssl_config_free(&conf);
+            return false;
+        }
+        total_sent += sent;
     }
 
-    int send_res = sceHttpSendRequest(req, post_data, (unsigned int)post_len);
-    if (send_res < 0) {
-        int errNum = 0;
-        unsigned int detail = 0;
-        sceHttpsGetSslError(req, &errNum, &detail);
-        LOG_ERROR("sceHttpSendRequest failed for URL %s: 0x%08x (ssl errNum=%d, detail=0x%08x)",
-                  url, send_res, errNum, detail);
-        sceHttpDeleteRequest(req);
-        sceHttpDeleteConnection(conn);
-        sceHttpDeleteTemplate(tmpl);
-        return false;
-    }
-
-    int status = 0;
-    sceHttpGetStatusCode(req, &status);
-    if (out_http_status) *out_http_status = status;
-
-    if (out_buf) {
-        out_buf->data = malloc(1);
-        out_buf->size = 0;
-        if (out_buf->data) out_buf->data[0] = '\0';
-
-        unsigned char chunk[2048];
-        int bytes_read = 0;
-        while ((bytes_read = sceHttpReadData(req, chunk, sizeof(chunk) - 1)) > 0) {
-            char *new_ptr = realloc(out_buf->data, out_buf->size + bytes_read + 1);
-            if (!new_ptr) {
-                LOG_ERROR("Out of memory reading HTTP response");
-                break;
+    /* Send Request Body */
+    if (post_data && post_len > 0) {
+        total_sent = 0;
+        while (total_sent < post_len) {
+            int sent = 0;
+            if (ssl_active) {
+                sent = mbedtls_ssl_write(&ssl, (const unsigned char *)post_data + total_sent, post_len - total_sent);
+            } else {
+                sent = sceNetSend(sock, (const char *)post_data + total_sent, post_len - total_sent, 0);
             }
-            out_buf->data = new_ptr;
-            memcpy(out_buf->data + out_buf->size, chunk, bytes_read);
-            out_buf->size += bytes_read;
-            out_buf->data[out_buf->size] = '\0';
+            if (sent <= 0) {
+                if (sent == MBEDTLS_ERR_SSL_WANT_READ || sent == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+                LOG_ERROR("Failed sending HTTP request body to %s", host);
+                if (ssl_active) mbedtls_ssl_close_notify(&ssl);
+                sceNetSocketClose(sock);
+                mbedtls_ssl_free(&ssl);
+                mbedtls_ssl_config_free(&conf);
+                return false;
+            }
+            total_sent += sent;
         }
     }
 
-    sceHttpDeleteRequest(req);
-    sceHttpDeleteConnection(conn);
-    sceHttpDeleteTemplate(tmpl);
+    /* Read Response */
+    size_t raw_capacity = 4096;
+    size_t raw_size = 0;
+    char *raw_resp = malloc(raw_capacity);
+    if (!raw_resp) {
+        LOG_ERROR("Out of memory allocating HTTP response buffer");
+        if (ssl_active) mbedtls_ssl_close_notify(&ssl);
+        sceNetSocketClose(sock);
+        mbedtls_ssl_free(&ssl);
+        mbedtls_ssl_config_free(&conf);
+        return false;
+    }
+
+    unsigned char chunk[2048];
+    while (1) {
+        int bytes_read = 0;
+        if (ssl_active) {
+            bytes_read = mbedtls_ssl_read(&ssl, chunk, sizeof(chunk));
+        } else {
+            bytes_read = sceNetRecv(sock, chunk, sizeof(chunk), 0);
+        }
+
+        if (bytes_read > 0) {
+            if (raw_size + bytes_read + 1 > raw_capacity) {
+                raw_capacity = (raw_size + bytes_read + 1) * 2;
+                char *new_buf = realloc(raw_resp, raw_capacity);
+                if (!new_buf) {
+                    LOG_ERROR("Out of memory reallocating HTTP response buffer");
+                    break;
+                }
+                raw_resp = new_buf;
+            }
+            memcpy(raw_resp + raw_size, chunk, bytes_read);
+            raw_size += bytes_read;
+            raw_resp[raw_size] = '\0';
+        } else if (bytes_read == 0 || bytes_read == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+            break;
+        } else if (bytes_read == MBEDTLS_ERR_SSL_WANT_READ || bytes_read == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            continue;
+        } else {
+            char err_buf[128];
+            mbedtls_strerror(bytes_read, err_buf, sizeof(err_buf));
+            LOG_ERROR("Error reading HTTP response from %s: -0x%04x (%s)", host, -bytes_read, err_buf);
+            break;
+        }
+    }
+
+    if (ssl_active) {
+        mbedtls_ssl_close_notify(&ssl);
+    }
+    sceNetSocketClose(sock);
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
+
+    if (raw_size == 0) {
+        LOG_ERROR("Empty response received from %s", host);
+        free(raw_resp);
+        return false;
+    }
+
+    const char *hdr_end = strstr(raw_resp, "\r\n\r\n");
+    if (!hdr_end) {
+        LOG_ERROR("Malformed HTTP response from %s (no header boundary)", host);
+        free(raw_resp);
+        return false;
+    }
+
+    int status_code = 0;
+    if (sscanf(raw_resp, "HTTP/%*d.%*d %d", &status_code) == 1) {
+        if (out_http_status) *out_http_status = status_code;
+    }
+
+    LOG_INFO("HTTP %d response from %s (%zu bytes)", status_code, host, raw_size);
+
+    const char *body_start = hdr_end + 4;
+    size_t body_len = raw_size - (body_start - raw_resp);
+
+    if (out_buf) {
+        bool is_chunked = false;
+        const char *te = find_case_insensitive(raw_resp, "Transfer-Encoding:");
+        if (te && te < hdr_end && find_case_insensitive(te, "chunked")) {
+            is_chunked = true;
+        }
+
+        if (is_chunked) {
+            size_t decoded_len = 0;
+            out_buf->data = decode_chunked_body(body_start, body_len, &decoded_len);
+            out_buf->size = decoded_len;
+        } else {
+            out_buf->data = malloc(body_len + 1);
+            if (out_buf->data) {
+                memcpy(out_buf->data, body_start, body_len);
+                out_buf->data[body_len] = '\0';
+                out_buf->size = body_len;
+            } else {
+                out_buf->size = 0;
+            }
+        }
+    }
+
+    free(raw_resp);
     return true;
 }
 
@@ -218,10 +602,74 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
 #endif
 
 bool spotify_init(void) {
+#if defined(__psp2__) || defined(__VITA__)
+    if (s_mbedtls_ready) return true;
+
+    mbedtls_x509_crt_init(&s_cacert);
+    mbedtls_entropy_init(&s_entropy);
+    mbedtls_ctr_drbg_init(&s_ctr_drbg);
+
+    const char *pers = "psvitaman_spotify";
+    int ret = mbedtls_ctr_drbg_seed(&s_ctr_drbg, mbedtls_entropy_func, &s_entropy,
+                                    (const unsigned char *)pers, strlen(pers));
+    if (ret != 0) {
+        char err_buf[128];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        LOG_ERROR("mbedtls_ctr_drbg_seed failed: -0x%04x (%s)", -ret, err_buf);
+        return false;
+    }
+
+    FILE *f = fopen("app0:assets/cacert.pem", "rb");
+    if (!f) {
+        LOG_ERROR("Failed to open app0:assets/cacert.pem");
+        return false;
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fsize <= 0) {
+        LOG_ERROR("app0:assets/cacert.pem is empty or invalid size: %ld", fsize);
+        fclose(f);
+        return false;
+    }
+
+    unsigned char *pem_buf = malloc(fsize + 1);
+    if (!pem_buf) {
+        LOG_ERROR("Out of memory allocating %ld bytes for CA bundle", fsize);
+        fclose(f);
+        return false;
+    }
+
+    size_t read_bytes = fread(pem_buf, 1, fsize, f);
+    fclose(f);
+    pem_buf[read_bytes] = '\0';
+
+    ret = mbedtls_x509_crt_parse(&s_cacert, pem_buf, read_bytes + 1);
+    free(pem_buf);
+
+    if (ret < 0) {
+        char err_buf[128];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        LOG_ERROR("mbedtls_x509_crt_parse failed: -0x%04x (%s)", -ret, err_buf);
+        return false;
+    }
+
+    LOG_INFO("MbedTLS initialized with Root CA certificate bundle (%zu bytes)", read_bytes);
+    s_mbedtls_ready = true;
+#endif
     return true;
 }
 
 void spotify_cleanup(void) {
+#if defined(__psp2__) || defined(__VITA__)
+    if (s_mbedtls_ready) {
+        mbedtls_x509_crt_free(&s_cacert);
+        mbedtls_ctr_drbg_free(&s_ctr_drbg);
+        mbedtls_entropy_free(&s_entropy);
+        s_mbedtls_ready = false;
+    }
+#endif
 }
 
 bool spotify_refresh_token(const char *client_id, const char *client_secret,

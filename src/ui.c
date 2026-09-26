@@ -344,97 +344,219 @@ static void draw_spool(float cx, float cy, float outer_radius, float angle_deg, 
     /* Outer spooled magnetic tape */
     if (outer_radius > 26.0f) {
         vita2d_draw_fill_circle(cx, cy, outer_radius, theme->tape_brown);
+        /* Wound tape density ring accents */
+        for (float r = 32.0f; r < outer_radius - 2.0f; r += 8.0f) {
+            vita2d_draw_fill_circle(cx, cy, r, (theme->tape_brown & 0x00FFFFFF) | 0x28000000);
+        }
     }
 
+    /* Outer plastic spool flange */
+    vita2d_draw_fill_circle(cx, cy, 27.0f, RGBA8(215, 218, 225, 255));
     /* White plastic cassette hub */
-    vita2d_draw_fill_circle(cx, cy, 26.0f, theme->spool_hub);
+    vita2d_draw_fill_circle(cx, cy, 25.0f, theme->spool_hub);
     vita2d_draw_fill_circle(cx, cy, 14.0f, theme->cassette_inner);
 
     /* 6 teeth / spokes radiating outward */
     for (int i = 0; i < 6; i++) {
         float rad = (angle_deg + i * 60.0f) * (3.14159265f / 180.0f);
-        float x1 = cx + cosf(rad) * 14.0f;
-        float y1 = cy + sinf(rad) * 14.0f;
-        float x2 = cx + cosf(rad) * 26.0f;
-        float y2 = cy + sinf(rad) * 26.0f;
+        float x1 = cx + cosf(rad) * 13.0f;
+        float y1 = cy + sinf(rad) * 13.0f;
+        float x2 = cx + cosf(rad) * 25.0f;
+        float y2 = cy + sinf(rad) * 25.0f;
         vita2d_draw_line(x1, y1, x2, y2, theme->spool_gear);
+        float px = -sinf(rad) * 1.5f;
+        float py = cosf(rad) * 1.5f;
+        vita2d_draw_line(x1 + px, y1 + py, x2 + px, y2 + py, theme->spool_gear);
+    }
+
+    /* Metal spindle pin at very center */
+    vita2d_draw_fill_circle(cx, cy, 4.0f, RGBA8(180, 185, 195, 255));
+}
+
+static void draw_tape_counter(float kx, float ky, int interpolated_progress_ms, const AppTheme *theme) {
+    float kw = 54.0f;
+    float kh = 32.0f;
+    draw_beveled_box(kx, ky, kw, kh, RGBA8(10, 12, 16, 255), theme->border_dark, theme->border_light);
+
+    if (s_font) {
+        /* "COUNTER" label above */
+        vita2d_pgf_draw_text(s_font, (int)kx, (int)(ky - 4), theme->text_muted, 0.58f, "COUNTER");
+
+        int counter_val = (interpolated_progress_ms / 1000) % 1000;
+        char c_buf[8];
+        snprintf(c_buf, sizeof(c_buf), "%03d", counter_val);
+
+        /* 3 rotary digit slots */
+        for (int i = 0; i < 3; i++) {
+            float wx = kx + 3.0f + i * 16.5f;
+            vita2d_draw_rectangle(wx, ky + 4.0f, 15.0f, 24.0f, RGBA8(22, 25, 32, 255));
+            vita2d_draw_line(wx, ky + 4.0f, wx, ky + 28.0f, RGBA8(40, 45, 55, 255));
+            vita2d_draw_line(wx + 14.0f, ky + 4.0f, wx + 14.0f, ky + 28.0f, RGBA8(5, 7, 10, 255));
+
+            char d_str[2] = { c_buf[i], '\0' };
+            int dw = vita2d_pgf_text_width(s_font, 0.85f, d_str);
+            vita2d_pgf_draw_text(s_font, (int)(wx + (15.0f - dw) * 0.5f), (int)(ky + 23.0f), RGBA8(240, 242, 245, 255), 0.85f, d_str);
+        }
+
+        /* Miniature reset push-button */
+        vita2d_draw_fill_circle(kx + kw + 7.0f, ky + kh * 0.5f, 3.5f, RGBA8(230, 235, 240, 255));
+        vita2d_draw_fill_circle(kx + kw + 7.0f, ky + kh * 0.5f, 1.5f, RGBA8(180, 185, 190, 255));
+    }
+}
+
+static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase, const AppTheme *theme) {
+    float vw = 50.0f;
+    float vh = 92.0f;
+    draw_beveled_box(vx, vy, vw, vh, RGBA8(12, 14, 18, 255), theme->border_dark, theme->border_light);
+
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(vx + 3), (int)(vy - 4), theme->text_muted, 0.58f, "LEVEL dB");
+        vita2d_pgf_draw_text(s_font, (int)(vx + 9), (int)(vy + 14), theme->text_muted, 0.55f, "L");
+        vita2d_pgf_draw_text(s_font, (int)(vx + 31), (int)(vy + 14), theme->text_muted, 0.55f, "R");
+    }
+
+    int lit_l = 0;
+    int lit_r = 0;
+    if (is_playing) {
+        float s1 = fabsf(sinf(anim_phase * 0.12f));
+        float s2 = fabsf(cosf(anim_phase * 0.17f + 0.5f));
+        lit_l = 1 + (int)(s1 * 4.99f);
+        lit_r = 1 + (int)(s2 * 4.99f);
+    }
+
+    /* 6 horizontal LED bars per channel */
+    for (int i = 0; i < 6; i++) {
+        float bar_y = vy + 76.0f - i * 11.0f;
+        unsigned int col_active;
+        unsigned int col_inactive;
+
+        if (i < 3) {
+            col_active = RGBA8(30, 215, 96, 255);
+            col_inactive = RGBA8(12, 45, 22, 255);
+        } else if (i < 5) {
+            col_active = RGBA8(255, 195, 25, 255);
+            col_inactive = RGBA8(55, 42, 8, 255);
+        } else {
+            col_active = RGBA8(235, 45, 45, 255);
+            col_inactive = RGBA8(55, 12, 12, 255);
+        }
+
+        vita2d_draw_rectangle(vx + 6.0f, bar_y, 16.0f, 7.0f, (i < lit_l) ? col_active : col_inactive);
+        vita2d_draw_rectangle(vx + 28.0f, bar_y, 16.0f, 7.0f, (i < lit_r) ? col_active : col_inactive);
     }
 }
 
 static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *theme, int ox, int oy, bool is_syncing) {
-    float tx = 20.0f + ox;
-    float ty = 6.0f + oy;
-    float tw = SCREEN_WIDTH - 40.0f;
-    float th = 48.0f;
+    float tx = 24.0f + ox;
+    float ty = 10.0f + oy;
+    float tw = 912.0f;
+    float th = 44.0f;
 
     draw_beveled_box(tx, ty, tw, th, theme->border_dark, theme->border_light, theme->border_dark);
 
     /* Subtle brushed metal accent lines */
     for (int y = (int)(ty + 4); y < (int)(ty + th - 4); y += 6) {
-        vita2d_draw_line(tx + 4, y, tx + tw - 4, y, (theme->border_light & 0x00FFFFFF) | 0x22000000);
+        vita2d_draw_line(tx + 4, y, tx + tw - 4, y, (theme->border_light & 0x00FFFFFF) | 0x18000000);
     }
 
     if (s_font) {
-        /* Model Name / Theme Brand */
-        vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 22), theme->text_accent, 0.85f, theme->model_stamp);
+        /* Bold SONY brand block */
+        vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 28), theme->text_primary, 0.95f, "SONY");
+
+        /* Model Stamp */
+        vita2d_pgf_draw_text(s_font, (int)(tx + 86), (int)(ty + 28), theme->text_accent, 0.76f, theme->model_stamp);
+
+        /* Headphone Jacks */
+        vita2d_pgf_draw_text(s_font, (int)(tx + 370), (int)(ty + 28), theme->text_muted, 0.68f, "PHONES  (1)  (2)");
+        vita2d_draw_fill_circle(tx + 472, ty + 20, 5, RGBA8(180, 185, 195, 255));
+        vita2d_draw_fill_circle(tx + 472, ty + 20, 2.5f, RGBA8(20, 24, 30, 255));
+        vita2d_draw_fill_circle(tx + 494, ty + 20, 5, RGBA8(180, 185, 195, 255));
+        vita2d_draw_fill_circle(tx + 494, ty + 20, 2.5f, RGBA8(20, 24, 30, 255));
+
+        /* Spotify Device Name (clipped safely) */
+        char dev_hud[128];
+        snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
+        vita2d_set_clip_rectangle((int)(tx + 524), (int)(ty + 6), 180, 32);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 524), (int)(ty + 28), theme->text_muted, 0.72f, dev_hud);
+        vita2d_disable_clipping();
 
         /* Volume Display */
         char vol_hud[32];
-        snprintf(vol_hud, sizeof(vol_hud), "VOL: %d%%", state->volume_percent);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 360), (int)(ty + 22), theme->text_primary, 0.80f, vol_hud);
+        snprintf(vol_hud, sizeof(vol_hud), "VOL %d%%", state->volume_percent);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 720), (int)(ty + 28), theme->text_primary, 0.78f, vol_hud);
 
-        /* Target Spotify Device */
-        char dev_hud[128];
-        snprintf(dev_hud, sizeof(dev_hud), "DEVICE: %s", (strlen(state->device_name) > 0) ? state->device_name : "None (Idle)");
-        vita2d_pgf_draw_text(s_font, (int)(tx + 490), (int)(ty + 22), theme->text_muted, 0.80f, dev_hud);
-
-        /* Theme badge hint */
-        char theme_badge[64];
-        snprintf(theme_badge, sizeof(theme_badge), "[THEME: %s]", theme->name);
-        int tbw = vita2d_pgf_text_width(s_font, 0.70f, theme_badge);
-        vita2d_pgf_draw_text(s_font, (int)(tx + tw - tbw - 32), (int)(ty + 22), theme->text_accent, 0.70f, theme_badge);
+        /* 5-Bar Volume Graphic */
+        int num_bars = (state->volume_percent * 5 + 50) / 100;
+        for (int b = 0; b < 5; b++) {
+            float bx = tx + 806 + b * 6.0f;
+            float bh = 4.0f + b * 2.5f;
+            unsigned int bc = (b < num_bars) ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
+            vita2d_draw_rectangle(bx, ty + 26.0f - bh, 4.0f, bh, bc);
+        }
 
         /* Live Sync Pulse Dot */
-        unsigned int sync_c = is_syncing ? theme->btn_active_led : RGBA8(50, 60, 75, 255);
-        vita2d_draw_fill_circle(tx + tw - 16, ty + 18, 5, sync_c);
+        unsigned int sync_c = is_syncing ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
+        vita2d_draw_fill_circle(tx + tw - 16, ty + 20, 5, sync_c);
     }
 }
 
 static void render_cassette_bay(const SpotifyPlaybackState *state, int interpolated_progress_ms, const AppTheme *theme, int ox, int oy) {
-    /* Main Cassette Shell */
-    float cx = 35.0f + ox;
-    float cy = 58.0f + oy;
-    float cw = SCREEN_WIDTH - 70.0f;
-    float ch = 376.0f;
+    /* Outer Cassette Door Frame */
+    float cx = 24.0f + ox;
+    float cy = 62.0f + oy;
+    float cw = 912.0f;
+    float ch = 364.0f;
 
-    draw_beveled_box(cx, cy, cw, ch, theme->cassette_shell, theme->border_light, theme->border_dark);
+    draw_beveled_box(cx, cy, cw, ch, theme->bg_chassis, theme->border_light, theme->border_dark);
 
-    /* Corner Screws */
-    draw_screw(cx + 18, cy + 18);
-    draw_screw(cx + cw - 18, cy + 18);
-    draw_screw(cx + 18, cy + ch - 18);
-    draw_screw(cx + cw - 18, cy + ch - 18);
-    draw_screw(cx + cw * 0.5f, cy + ch - 16);
+    /* Corner Screws on outer door */
+    draw_screw(cx + 12, cy + 12);
+    draw_screw(cx + cw - 12, cy + 12);
+    draw_screw(cx + 12, cy + ch - 12);
+    draw_screw(cx + cw - 12, cy + ch - 12);
 
-    /* Upper Cassette Label */
-    float lx = cx + 45.0f;
-    float ly = cy + 16.0f;
-    float lw = cw - 90.0f;
-    float lh = 100.0f;
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(cx + 26), (int)(cy + 22), theme->text_muted, 0.65f, "EJECT [SELECT]");
+        vita2d_pgf_draw_text(s_font, (int)(cx + cw - 110), (int)(cy + 22), theme->text_muted, 0.65f, "DIRECTION >");
+    }
 
-    draw_beveled_box(lx, ly, lw, lh, theme->label_bg, RGBA8(255, 255, 255, 220), RGBA8(180, 175, 165, 255));
+    /* Cassette Tape Shell Body */
+    float sx = cx + 24.0f;
+    float sy = cy + 14.0f;
+    float sw = cw - 48.0f; /* 864.0f */
+    float sh = 336.0f;
 
-    /* Retro Red & Blue racing stripe across top of label */
+    draw_beveled_box(sx, sy, sw, sh, theme->cassette_shell, theme->border_light, theme->border_dark);
+
+    /* 5 Cassette Shell Assembly Screws */
+    draw_screw(sx + 14, sy + 14);
+    draw_screw(sx + sw - 14, sy + 14);
+    draw_screw(sx + 14, sy + sh - 14);
+    draw_screw(sx + sw - 14, sy + sh - 14);
+    draw_screw(sx + sw * 0.5f, sy + 14);
+
+    /* Upper Cassette Paper Label Card */
+    float lx = sx + 28.0f;
+    float ly = sy + 10.0f;
+    float lw = sw - 56.0f; /* 808.0f */
+    float lh = 92.0f;
+
+    draw_beveled_box(lx, ly, lw, lh, theme->label_bg, RGBA8(255, 255, 255, 240), RGBA8(180, 175, 165, 255));
+
+    /* Dual Racing Stripes across Label */
     vita2d_draw_rectangle(lx + 2, ly + 5, lw - 4, 3, theme->label_stripe_a);
     vita2d_draw_rectangle(lx + 2, ly + 8, lw - 4, 3, theme->label_stripe_b);
 
     if (s_font) {
-        /* Vintage cassette brand typography */
-        vita2d_pgf_draw_text(s_font, (int)(lx + 16), (int)(ly + 28), theme->label_stripe_a, 0.80f, "A");
-        vita2d_pgf_draw_text(s_font, (int)(lx + 34), (int)(ly + 28), theme->label_text, 0.72f, "PSVITAMAN - C-90 HIGH BIAS");
-        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 140), (int)(ly + 28), theme->label_text, 0.70f, "STEREO - 120us");
+        /* Bold Boxed "A" */
+        draw_beveled_box(lx + 12, ly + 14, 22, 20, theme->label_stripe_a, RGBA8(255, 255, 255, 255), RGBA8(0, 0, 0, 255));
+        vita2d_pgf_draw_text(s_font, (int)(lx + 17), (int)(ly + 30), RGBA8(255, 255, 255, 255), 0.85f, "A");
 
-        /* Track Title Label with Marquee Scrolling */
+        /* Label Typography */
+        vita2d_pgf_draw_text(s_font, (int)(lx + 42), (int)(ly + 28), theme->label_text, 0.72f, "PSVITAMAN - C-90 HIGH BIAS 70us EQ");
+        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 220), (int)(ly + 28), theme->label_text, 0.70f, "DOLBY B NR  |  STEREO");
+
+        /* Track Title Marquee */
         const char *track_title = (strlen(state->track_name) > 0) ? state->track_name : "Playback Idle / Stopped";
         int title_w = vita2d_pgf_text_width(s_font, 1.20f, track_title);
 
@@ -453,10 +575,9 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         } else {
             vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(clip_y + 24), theme->label_text, 1.20f, track_title);
         }
-
         vita2d_disable_clipping();
 
-        /* Artist & Album line */
+        /* Artist & Album Subtitle */
         char artist_album[600] = {0};
         if (strlen(state->artist_name) > 0) {
             if (strlen(state->album_name) > 0) {
@@ -468,28 +589,34 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
             utils_safe_strncpy(artist_album, "Connect Spotify from Phone, PC, or Console", sizeof(artist_album));
         }
 
-        vita2d_set_clip_rectangle((int)clip_x, (int)(ly + 68), (int)clip_w, 26);
-        vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(ly + 88), RGBA8(80, 85, 95, 255), 0.85f, artist_album);
+        vita2d_set_clip_rectangle((int)clip_x, (int)(ly + 68), (int)clip_w, 24);
+        vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(ly + 86), RGBA8(80, 85, 95, 255), 0.82f, artist_album);
         vita2d_disable_clipping();
     }
 
-    /* Cassette Center Window Frame (Inspired by reference Walkman) */
-    float wx = cx + 130.0f;
-    float wy = cy + 124.0f;
-    float ww = cw - 260.0f;
-    float wh = 182.0f;
+    /* Central Clear Acrylic Cassette Window */
+    float wx = sx + 78.0f;
+    float wy = sy + 108.0f;
+    float ww = sw - 156.0f; /* 708.0f */
+    float wh = 168.0f;
 
-    /* Stamped "AUTO STOP" header above window */
+    /* Stamped "AUTO STOP" Header */
     if (s_font) {
         const char *auto_stop = "AUTO  STOP";
-        int asw = vita2d_pgf_text_width(s_font, 0.70f, auto_stop);
-        vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy - 4), theme->text_muted, 0.70f, auto_stop);
+        int asw = vita2d_pgf_text_width(s_font, 0.68f, auto_stop);
+        vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy - 3), theme->text_muted, 0.68f, auto_stop);
     }
 
-    /* Deep Sunken Window */
+    /* Deep Sunken Acrylic Window Cavity */
     draw_beveled_box(wx, wy, ww, wh, theme->cassette_inner, theme->border_dark, theme->border_light);
 
-    /* Tape Roll Proportions based on current track progress */
+    /* Mechanical Tape Counter (Left of Window) */
+    draw_tape_counter(sx + 12.0f, wy + 38.0f, interpolated_progress_ms, theme);
+
+    /* Stereo LED VU Meters (Right of Window) */
+    draw_vu_meters(sx + sw - 66.0f, wy + 20.0f, state->is_playing, s_spool_angle, theme);
+
+    /* Physics-inspired tape roll geometry */
     float progress_ratio = 0.0f;
     if (state->duration_ms > 0) {
         progress_ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
@@ -497,76 +624,96 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         if (progress_ratio > 1.0f) progress_ratio = 1.0f;
     }
 
-    /* Physics-inspired reel geometry: area ~ tape length, so radius ~ sqrt(ratio) */
-    float left_radius  = 26.0f + 40.0f * sqrtf(1.0f - progress_ratio);
-    float right_radius = 26.0f + 40.0f * sqrtf(progress_ratio);
+    float left_radius  = 26.0f + 42.0f * sqrtf(1.0f - progress_ratio);
+    float right_radius = 26.0f + 42.0f * sqrtf(progress_ratio);
 
-    float left_cx  = wx + 95.0f;
-    float right_cx = wx + ww - 95.0f;
-    float spool_cy = wy + wh * 0.5f - 8.0f;
+    float left_cx  = wx + 130.0f;
+    float right_cx = wx + ww - 130.0f;
+    float spool_cy = wy + wh * 0.5f - 6.0f;
 
-    /* Draw bottom magnetic tape ribbon across guide rollers */
-    vita2d_draw_rectangle(left_cx - 40, spool_cy + 48, (right_cx - left_cx) + 80, 8, theme->tape_brown);
-    vita2d_draw_fill_circle(left_cx - 35, spool_cy + 52, 6, RGBA8(160, 165, 175, 255));
-    vita2d_draw_fill_circle(right_cx + 35, spool_cy + 52, 6, RGBA8(160, 165, 175, 255));
+    /* Magnetic tape ribbon running across bottom guide rollers */
+    vita2d_draw_rectangle(left_cx - 45, spool_cy + 52, (right_cx - left_cx) + 90, 8, theme->tape_brown);
+    vita2d_draw_fill_circle(left_cx - 38, spool_cy + 56, 6, RGBA8(160, 165, 175, 255));
+    vita2d_draw_fill_circle(right_cx + 38, spool_cy + 56, 6, RGBA8(160, 165, 175, 255));
 
-    /* Dual Rotating Spools */
+    /* Dual Rotating Cassette Spools */
     draw_spool(left_cx, spool_cy, left_radius, s_spool_angle, theme);
     draw_spool(right_cx, spool_cy, right_radius, s_spool_angle, theme);
 
-    /* Center tape index scale lines on window */
+    /* Center tape index scale lines on acrylic window */
     float center_x = wx + ww * 0.5f;
+    if (s_font) {
+        vita2d_pgf_draw_text(s_font, (int)(center_x - 36), (int)(wy + 24), (theme->border_light & 0x00FFFFFF) | 0x88000000, 0.60f, "100  50   0");
+    }
     for (int i = -3; i <= 3; i++) {
         float mark_y = spool_cy + i * 8.0f;
-        vita2d_draw_line(center_x - 16, mark_y, center_x + 16, mark_y, (theme->border_light & 0x00FFFFFF) | 0x88000000);
+        vita2d_draw_line(center_x - 14, mark_y, center_x + 14, mark_y, (theme->border_light & 0x00FFFFFF) | 0x77000000);
     }
 
-    /* Stamped Walkman subtext below window (matching reference image) */
-    if (s_font) {
-        const char *deck_stamp = "<= STEREO RADIO CASSETTE RECORD =>";
-        int dsw = vita2d_pgf_text_width(s_font, 0.65f, deck_stamp);
-        vita2d_pgf_draw_text(s_font, (int)(wx + (ww - dsw) * 0.5f), (int)(wy + wh + 14), theme->text_muted, 0.65f, deck_stamp);
-    }
+    /* Acrylic Window Glare / Glass Reflection Highlight */
+    vita2d_draw_line(wx + 30, wy + wh - 12, wx + 140, wy + 12, RGBA8(255, 255, 255, 24));
+    vita2d_draw_line(wx + 32, wy + wh - 12, wx + 142, wy + 12, RGBA8(255, 255, 255, 36));
+    vita2d_draw_line(wx + 34, wy + wh - 12, wx + 144, wy + 12, RGBA8(255, 255, 255, 24));
 
-    /* Lower HUD Strip: Progress bar & Time Counter */
-    float hx = cx + 45.0f;
-    float hy = cy + ch - 48.0f;
-    float hw = cw - 90.0f;
-    float hh = 38.0f;
+    /* Cassette Head Trapezoid Notch */
+    float tz_w = 400.0f;
+    float tz_x = sx + (sw - tz_w) * 0.5f;
+    float tz_y = sy + sh - 56.0f;
+    float tz_h = 24.0f;
+    draw_beveled_box(tz_x, tz_y, tz_w, tz_h, theme->cassette_inner, theme->border_dark, theme->border_light);
+
+    /* Capstan Holes */
+    vita2d_draw_fill_circle(tz_x + 50.0f, tz_y + 12.0f, 6.0f, RGBA8(180, 185, 195, 255));
+    vita2d_draw_fill_circle(tz_x + 50.0f, tz_y + 12.0f, 3.0f, RGBA8(10, 12, 16, 255));
+    vita2d_draw_fill_circle(tz_x + tz_w - 50.0f, tz_y + 12.0f, 6.0f, RGBA8(180, 185, 195, 255));
+    vita2d_draw_fill_circle(tz_x + tz_w - 50.0f, tz_y + 12.0f, 3.0f, RGBA8(10, 12, 16, 255));
+
+    /* Tape Head Exposure Window & Magnetic Ribbon */
+    vita2d_draw_rectangle(tz_x + 95.0f, tz_y + 6.0f, tz_w - 190.0f, 12.0f, RGBA8(8, 10, 14, 255));
+    vita2d_draw_rectangle(tz_x + 105.0f, tz_y + 9.0f, tz_w - 210.0f, 6.0f, theme->tape_brown);
+
+    /* Lower HUD Inset Strip: Progress Bar & Time Readout */
+    float hx = sx + 28.0f;
+    float hy = sy + sh - 30.0f;
+    float hw = sw - 56.0f; /* 808.0f */
+    float hh = 26.0f;
 
     draw_beveled_box(hx, hy, hw, hh, RGBA8(14, 16, 22, 255), theme->border_dark, theme->border_light);
 
-    /* Thin Progress Bar along top edge of HUD */
-    vita2d_draw_rectangle(hx + 4, hy + 2, hw - 8, 4, RGBA8(28, 32, 42, 255));
+    /* Clean Progress Bar in Center of Strip */
+    float pb_x = hx + 200.0f;
+    float pb_w = hw - 420.0f;
+    vita2d_draw_rectangle(pb_x, hy + 11.0f, pb_w, 4.0f, RGBA8(28, 32, 42, 255));
     if (progress_ratio > 0.0f) {
-        vita2d_draw_rectangle(hx + 4, hy + 2, (hw - 8) * progress_ratio, 4, theme->btn_active_led);
+        float filled_w = pb_w * progress_ratio;
+        vita2d_draw_rectangle(pb_x, hy + 11.0f, filled_w, 4.0f, theme->btn_active_led);
+        vita2d_draw_fill_circle(pb_x + filled_w, hy + 13.0f, 4.0f, theme->btn_active_led);
     }
 
     if (s_font) {
-        /* Time Readout: MM:SS / MM:SS */
+        /* Time Readout (Left): MM:SS / MM:SS */
         char cur_time[16], total_time[16], time_hud[40];
         utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
         utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
         snprintf(time_hud, sizeof(time_hud), "%s / %s", cur_time, total_time);
-        vita2d_pgf_draw_text(s_font, (int)(hx + 14), (int)(hy + 26), theme->btn_active_led, 0.85f, time_hud);
+        vita2d_pgf_draw_text(s_font, (int)(hx + 12), (int)(hy + 18), theme->btn_active_led, 0.78f, time_hud);
 
-        /* Playing / Paused Status Label */
-        const char *status_txt = state->is_playing ? "[ PLAYING ]" : "[ PAUSED ]";
-        int stw = vita2d_pgf_text_width(s_font, 0.80f, status_txt);
-        vita2d_pgf_draw_text(s_font, (int)(hx + (hw - stw) * 0.5f), (int)(hy + 26), theme->text_primary, 0.80f, status_txt);
-
-        /* Shuffle & Repeat Status Indicators */
+        /* Mode Badges (Right): SHUF & REP */
         char mode_str[64];
         const char *rep_str = (state->repeat_state == REPEAT_TRACK) ? "TRK" : ((state->repeat_state == REPEAT_CONTEXT) ? "ALL" : "OFF");
         snprintf(mode_str, sizeof(mode_str), "SHUF: %s | REP: %s", state->shuffle_state ? "ON" : "OFF", rep_str);
-        int mw = vita2d_pgf_text_width(s_font, 0.75f, mode_str);
-        vita2d_pgf_draw_text(s_font, (int)(hx + hw - mw - 14), (int)(hy + 26), theme->text_muted, 0.75f, mode_str);
+        int mw = vita2d_pgf_text_width(s_font, 0.70f, mode_str);
+        vita2d_pgf_draw_text(s_font, (int)(hx + hw - mw - 12), (int)(hy + 18), theme->text_muted, 0.70f, mode_str);
     }
 }
 
 static void render_transport_bar(const SpotifyPlaybackState *state, const InputState *input, const AppTheme *theme, int ox, int oy) {
     /* Sunken mechanical button bay across the bottom of the device */
-    draw_beveled_box(16.0f + ox, 440.0f + oy, SCREEN_WIDTH - 32.0f, 96.0f, theme->border_dark, theme->border_dark, theme->border_light);
+    float bx_bay = 24.0f + ox;
+    float by_bay = 434.0f + oy;
+    float bw_bay = 912.0f;
+    float bh_bay = 98.0f;
+    draw_beveled_box(bx_bay, by_bay, bw_bay, bh_bay, theme->border_dark, theme->border_dark, theme->border_light);
 
     const DeckButtonRect *btns = input_get_button_rects();
 
@@ -596,6 +743,14 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
 
         draw_beveled_box(bx, by, bw, bh, fill_color, hi_color, lo_color);
 
+        if (!is_theme_btn) {
+            /* Tactile piano-key horizontal ridges */
+            vita2d_draw_line(bx + 14, by + 8, bx + bw - 14, by + 8, theme->btn_border_lo);
+            vita2d_draw_line(bx + 14, by + 9, bx + bw - 14, by + 9, theme->btn_border_hi);
+            vita2d_draw_line(bx + 14, by + 13, bx + bw - 14, by + 13, theme->btn_border_lo);
+            vita2d_draw_line(bx + 14, by + 14, bx + bw - 14, by + 14, theme->btn_border_hi);
+        }
+
         /* Indicator LED in top corner of togglable buttons */
         bool has_led = (i == BTN_INDEX_SHUFFLE || i == BTN_INDEX_REPEAT || i == BTN_INDEX_PLAY_PAUSE);
         bool is_active = false;
@@ -605,21 +760,20 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
 
         if (has_led) {
             unsigned int led_c = is_active ? theme->btn_active_led : RGBA8(45, 52, 62, 255);
-            vita2d_draw_fill_circle(bx + bw - 14, by + 13, 4, led_c);
+            vita2d_draw_fill_circle(bx + bw - 14, by + 12, 4, led_c);
             if (is_active) {
-                /* Glowing LED halo */
-                vita2d_draw_fill_circle(bx + bw - 14, by + 13, 6, (led_c & 0x00FFFFFF) | 0x44000000);
+                vita2d_draw_fill_circle(bx + bw - 14, by + 12, 6, (led_c & 0x00FFFFFF) | 0x44000000);
             }
         }
 
         /* Center coordinates for icon */
         float icx = bx + bw * 0.5f;
-        float icy = by + bh * 0.38f;
+        float icy = is_theme_btn ? (by + bh * 0.40f) : (by + bh * 0.44f);
         unsigned int icon_color = is_active ? theme->btn_active_led : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_primary);
 
         switch (i) {
             case BTN_INDEX_THEME:
-                draw_icon_theme(icx, icy, 26.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
+                draw_icon_theme(icx, icy, 34.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
                 break;
             case BTN_INDEX_SHUFFLE:
                 draw_icon_shuffle(icx, icy, 26.0f, icon_color);
@@ -652,19 +806,19 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                 else if (state->repeat_state == REPEAT_CONTEXT) label_text = "REPEAT";
                 else label_text = "REP OFF";
             } else if (i == BTN_INDEX_THEME) {
-                label_text = "THEME";
+                label_text = "HOT LINE";
             }
 
-            int tw = vita2d_pgf_text_width(s_font, 0.78f, label_text);
+            int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
             int tx = (int)(bx + (bw - tw) * 0.5f);
-            int ty = (int)(by + bh - 24);
+            int ty = (int)(by + bh - 20);
             unsigned int tc = is_active ? theme->btn_active_led : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_muted);
-            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.78f, label_text);
+            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.74f, label_text);
 
-            int hw = vita2d_pgf_text_width(s_font, 0.65f, b->hotkey_hint);
+            int hw = vita2d_pgf_text_width(s_font, 0.62f, b->hotkey_hint);
             int hx = (int)(bx + (bw - hw) * 0.5f);
-            int hy = (int)(by + bh - 9);
-            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(120, 130, 145, 200), 0.65f, b->hotkey_hint);
+            int hy = (int)(by + bh - 7);
+            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 200), 0.62f, b->hotkey_hint);
         }
     }
 }

@@ -14,14 +14,14 @@ static uint32_t s_prev_buttons = 0;
 static bool s_prev_touch = false;
 static int s_touch_held_btn = -1;
 
-/* Deck Button Layout: 6 mechanical audio buttons across bottom (Y: 446..532) */
+/* Deck Button Layout: 6 mechanical audio buttons across bottom (Y: 442..524, W: 140, H: 82) */
 static const DeckButtonRect s_deck_buttons[DECK_BTN_COUNT] = {
-    {  29, 446, 142, 86, "THEME",   "[< >]" },
-    { 181, 446, 142, 86, "SHUFFLE", "[SQ]" },
-    { 333, 446, 142, 86, "PREV",    "[L]" },
-    { 485, 446, 142, 86, "PLAY",    "[X]" },
-    { 637, 446, 142, 86, "NEXT",    "[R]" },
-    { 789, 446, 142, 86, "REPEAT",  "[TRI]" }
+    {  35, 442, 140, 82, "THEME",   "[< >]" },
+    { 185, 442, 140, 82, "SHUFFLE", "[SQ]" },
+    { 335, 442, 140, 82, "PREV",    "[L]" },
+    { 485, 442, 140, 82, "PLAY",    "[X]" },
+    { 635, 442, 140, 82, "NEXT",    "[R]" },
+    { 785, 442, 140, 82, "REPEAT",  "[TRI]" }
 };
 
 const DeckButtonRect *input_get_button_rects(void) {

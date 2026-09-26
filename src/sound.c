@@ -99,7 +99,7 @@ void sound_init(void) {
     if (s_audio_port >= 0) {
         /* Set max volume for tactile clicks */
         int vol[2] = { SCE_AUDIO_OUT_MAX_VOL, SCE_AUDIO_OUT_MAX_VOL };
-        sceAudioOutSetVolume(s_audio_port, SCE_AUDIO_OUT_FLAG_VOL_LEFT | SCE_AUDIO_OUT_FLAG_VOL_RIGHT, vol);
+        sceAudioOutSetVolume(s_audio_port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
         LOG_INFO("Audio port opened successfully (port: %d, rate: 44.1kHz stereo)", s_audio_port);
 
         s_audio_running = true;

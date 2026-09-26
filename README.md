@@ -17,7 +17,7 @@
 - **Walkman-Inspired Themes**: 4 authentic colorways inspired by iconic Sony models (1979 TPS-L2 Blue, 1983 WM-F5 Sports Yellow, 1982 WM-DD Graphite, and 0-IRE Stealth AMOLED Black).
 - **AMOLED Burn-In Safety**: Periodic 8-point orbital pixel shifting ($\pm 2\text{px}$) designed specifically for PS Vita 1000 OLED displays to prevent static image burn-in.
 - **Continuous Desk Playback**: Prevents the PS Vita screen from dimming or going to sleep while active.
-- **Dynamic Cassette Spools**: Real-time rotational physics when tracks are playing, with progressive tape radius (left supply reel shrinks, right take-up reel expands).
+- **Authentic Cassette Tape Physics**: Independent spool speeds following linear tape velocity ($v = \omega \cdot r$ — small reels spin $\sim 2.6\times$ faster than full ones), smooth motor spin-up/spin-down inertia, organic belt-drive wow & flutter, track-skip fast whir bursts, tangential tape ribbon routing, and a mechanical 3-digit counter geared to reel revolutions.
 - **On-Screen QR Code Pairing**: Real-time high-contrast QR code generated directly on the PS Vita screen. Point your phone camera at the screen to immediately open the Spotify authorization page or re-pair devices.
 - **Physical & Touch Controls**: 6 mechanical transport buttons positioned across the bottom of the screen with vector iconography and tactile visual feedback.
 - **Live HUD Display**: Track title marquee scrolling, Artist & Album names, millisecond-accurate time counter (`02:14 / 04:30`), volume percentage, and active Spotify device name.

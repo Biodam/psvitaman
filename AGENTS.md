@@ -64,7 +64,13 @@ This document provides complete architectural context, design patterns, debuggin
 4. **UI & Graphics (`src/ui.c`)**:
    - Powered by `vita2d` (GPU-accelerated PVR/SGX543 rendering, 960x544).
    - Uses system PGF font (`sceSysmoduleLoadModule(SCE_SYSMODULE_PGF)`).
-   - Real-time tape reel animation: spool angular speed scales with tape diameter as supply shrinks and take-up fills.
+   - **Authentic Cassette Tape Physics**:
+     - **Conservation of Linear Speed**: $v = \omega \cdot r$ ($4.76 \text{ cm/s}$). Empty spools turn $\sim 2.6\times$ faster than full tape packs ($200^\circ/\text{s}$ vs $78^\circ/\text{s}$). As supply depletes, left reel accelerates; as take-up fills, right reel decelerates.
+     - **Motor Inertia**: Smooth exponential acceleration/deceleration on play and pause.
+     - **Wow & Flutter**: Micro-harmonic speed fluctuation ($\pm 2\%$) modeling realistic belt-drive slip and motor vibrations.
+     - **Fast Whir Cueing**: Brief 3.5x speed burst on track skips and seeking.
+     - **Tangential Ribbon Routing**: Tape peels tangentially off the supply reel, loops around flanged guide rollers, and feeds into the take-up reel dynamically.
+     - **Mechanical Tape Counter**: Geared to cumulative revolutions of the take-up reel rather than flat wall-clock seconds.
    - 100% procedurally drawn vector icons: Play, Pause, Prev, Next, Shuffle, Repeat, and the authentic circular Theme button.
 
 5. **AMOLED Burn-in Protection (`src/ui.c`)**:

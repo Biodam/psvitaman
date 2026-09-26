@@ -36,6 +36,14 @@ typedef struct {
 
 #if defined(__psp2__) || defined(__VITA__)
 
+static int ssl_callback(unsigned int verifyErr, void * const sslCert[], int certNum, void *userArg) {
+    (void)sslCert;
+    (void)certNum;
+    (void)userArg;
+    LOG_INFO("ssl_callback: verifyErr = 0x%08x, certNum = %d (accepting certificate)", verifyErr, certNum);
+    return 0;
+}
+
 static bool do_http_request(const char *url, HttpMethodType method, const char *auth_header,
                            const char *content_type, const void *post_data, size_t post_len,
                            HttpResponseBuffer *out_buf, int *out_http_status) {
@@ -48,6 +56,16 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
         return false;
     }
 
+    sceHttpsSetSslCallback(tmpl, ssl_callback, NULL);
+    sceHttpsDisableOption(
+        SCE_HTTPS_FLAG_SERVER_VERIFY |
+        SCE_HTTPS_FLAG_CLIENT_VERIFY |
+        SCE_HTTPS_FLAG_CN_CHECK |
+        SCE_HTTPS_FLAG_NOT_AFTER_CHECK |
+        SCE_HTTPS_FLAG_NOT_BEFORE_CHECK |
+        SCE_HTTPS_FLAG_KNOWN_CA_CHECK
+    );
+
     sceHttpSetConnectTimeOut(tmpl, 8 * 1000 * 1000);
     sceHttpSetSendTimeOut(tmpl, 8 * 1000 * 1000);
     sceHttpSetRecvTimeOut(tmpl, 8 * 1000 * 1000);
@@ -59,6 +77,7 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
         sceHttpDeleteTemplate(tmpl);
         return false;
     }
+    sceHttpsSetSslCallback(conn, ssl_callback, NULL);
 
     int sce_method = SCE_HTTP_METHOD_GET;
     if (method == HTTP_REQ_POST) sce_method = SCE_HTTP_METHOD_POST;
@@ -71,6 +90,7 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
         sceHttpDeleteTemplate(tmpl);
         return false;
     }
+    sceHttpsSetSslCallback(req, ssl_callback, NULL);
 
     if (auth_header && strlen(auth_header) > 0) {
         sceHttpAddRequestHeader(req, "Authorization", auth_header, SCE_HTTP_HEADER_ADD);
@@ -81,7 +101,11 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
 
     int send_res = sceHttpSendRequest(req, post_data, (unsigned int)post_len);
     if (send_res < 0) {
-        LOG_ERROR("sceHttpSendRequest failed for URL %s: 0x%08x", url, send_res);
+        int errNum = 0;
+        unsigned int detail = 0;
+        sceHttpsGetSslError(req, &errNum, &detail);
+        LOG_ERROR("sceHttpSendRequest failed for URL %s: 0x%08x (ssl errNum=%d, detail=0x%08x)",
+                  url, send_res, errNum, detail);
         sceHttpDeleteRequest(req);
         sceHttpDeleteConnection(conn);
         sceHttpDeleteTemplate(tmpl);

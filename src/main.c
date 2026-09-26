@@ -54,7 +54,14 @@ int main(int argc, char *argv[]) {
     /* 3. Initialize SceSsl & SceHttp Native Stacks */
     sceSslInit(300 * 1024);
     sceHttpInit(1024 * 1024);
-    sceHttpsDisableOption(SCE_HTTPS_FLAG_SERVER_VERIFY);
+    sceHttpsDisableOption(
+        SCE_HTTPS_FLAG_SERVER_VERIFY |
+        SCE_HTTPS_FLAG_CLIENT_VERIFY |
+        SCE_HTTPS_FLAG_CN_CHECK |
+        SCE_HTTPS_FLAG_NOT_AFTER_CHECK |
+        SCE_HTTPS_FLAG_NOT_BEFORE_CHECK |
+        SCE_HTTPS_FLAG_KNOWN_CA_CHECK
+    );
 
     /* 4. Initialize vita2d Graphics */
     vita2d_init();

@@ -17,10 +17,10 @@ static int s_touch_held_btn = -1;
 /* Deck Button Layout: 6 mechanical audio buttons across bottom (Y: 440..524, W: 140, H: 84) */
 static const DeckButtonRect s_deck_buttons[DECK_BTN_COUNT] = {
     {  35, 440, 140, 84, "THEME",   "[< >]" },
-    { 185, 440, 140, 84, "SHUFFLE", "[SQ]" },
+    { 185, 440, 140, 84, "PLAY",    "[X]" },
     { 335, 440, 140, 84, "PREV",    "[L]" },
-    { 485, 440, 140, 84, "PLAY",    "[X]" },
-    { 635, 440, 140, 84, "NEXT",    "[R]" },
+    { 485, 440, 140, 84, "NEXT",    "[R]" },
+    { 635, 440, 140, 84, "SHUFFLE", "[SQ]" },
     { 785, 440, 140, 84, "REPEAT",  "[TRI]" }
 };
 

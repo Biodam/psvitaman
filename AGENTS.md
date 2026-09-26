@@ -119,19 +119,19 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 |               Supply Reel             Take-up Reel                 |
 |                                                                    |
 +--------------------------------------------------------------------+
-| [THEME]   [SHUFFLE]    [PREV]      [PLAY]      [NEXT]    [REPEAT]  |  Y: 446..532
-|  [< >]      [SQ]        [L]         [X]         [R]       [TRI]    |
+| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 446..532
+|  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |
 +--------------------------------------------------------------------+
 ```
 
 | Physical Button | Touchscreen Hitbox | Action |
 |---|---|---|
-| **Cross ($\times$)** | **PLAY / PAUSE** (Center) | Toggle Playback |
-| **R-Trigger** | **NEXT** | Skip Track |
+| **Cross ($\times$)** | **PLAY / PAUSE** (Button 2) | Toggle Playback |
 | **L-Trigger** | **PREV** | Previous Track |
+| **R-Trigger** | **NEXT** | Skip Track |
 | **Square ($\square$)** | **SHUFFLE** | Toggle Shuffle |
 | **Triangle ($\triangle$)** | **REPEAT** | Cycle Repeat (Off / Context / Track) |
-| **D-Pad Right** | **THEME** (Far Left) | Next Theme |
+| **D-Pad Right** | **THEME** (Button 1, Far Left) | Next Theme |
 | **D-Pad Left** | — | Previous Theme |
 | **D-Pad Up / Down** | — | Volume $\pm 5\%$ |
 | **Select** | — | Reset Pairing / Clear Config / Enter Setup Mode |

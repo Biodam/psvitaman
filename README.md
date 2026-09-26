@@ -48,16 +48,16 @@
 |          [ (O)           === TAPE ===           (O) ]              |
 |                                                                    |
 +--------------------------------------------------------------------+
-| [THEME]   [SHUFFLE]    [PREV]      [PLAY]      [NEXT]    [REPEAT]  |
-|  [< >]      [SQ]        [L]         [X]         [R]       [TRI]    |
+| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |
+|  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |
 +--------------------------------------------------------------------+
 ```
 
 | Physical Input | Touchscreen Equivalent | Action | Description |
 |---|---|---|---|
 | **Cross ($\times$)** | Tap **PLAY / PAUSE** button | Toggle Play / Pause | Start or pause Spotify playback |
-| **R-Trigger** | Tap **NEXT** button | Skip Next Track | Skip to the next song |
 | **L-Trigger** | Tap **PREV** button | Skip Previous Track | Skip to previous song or track start |
+| **R-Trigger** | Tap **NEXT** button | Skip Next Track | Skip to the next song |
 | **Square ($\square$)** | Tap **SHUFFLE** button | Toggle Shuffle | Toggle shuffle mode on/off |
 | **Triangle ($\triangle$)** | Tap **REPEAT** button | Cycle Repeat Mode | Cycle Repeat Off $\to$ Context $\to$ Track |
 | **D-Pad Right** | Tap **THEME** button (`[< >]`) | Next Theme | Cycle forward through Walkman themes |

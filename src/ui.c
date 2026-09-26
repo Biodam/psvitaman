@@ -323,14 +323,14 @@ static void draw_beveled_box(float x, float y, float w, float h,
 
 static void draw_triangle_right(float x, float y, float w, float h, unsigned int c) {
     for (float i = 0; i < w; i += 1.0f) {
-        float half_h = (h * 0.5f) * (i / w);
+        float half_h = (h * 0.5f) * ((w - i) / w);
         vita2d_draw_line(x + i, y - half_h, x + i, y + half_h, c);
     }
 }
 
 static void draw_triangle_left(float x, float y, float w, float h, unsigned int c) {
     for (float i = 0; i < w; i += 1.0f) {
-        float half_h = (h * 0.5f) * ((w - i) / w);
+        float half_h = (h * 0.5f) * (i / w);
         vita2d_draw_line(x + i, y - half_h, x + i, y + half_h, c);
     }
 }
@@ -888,12 +888,6 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
             case BTN_INDEX_THEME:
                 draw_icon_theme(icx, icy, 26.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
                 break;
-            case BTN_INDEX_SHUFFLE:
-                draw_icon_shuffle(icx, icy, 20.0f, icon_color);
-                break;
-            case BTN_INDEX_PREV:
-                draw_icon_prev(icx, icy, 20.0f, icon_color);
-                break;
             case BTN_INDEX_PLAY_PAUSE:
                 if (state->is_playing) {
                     draw_icon_pause(icx, icy, 18.0f, 18.0f, icon_color);
@@ -901,8 +895,14 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                     draw_icon_play(icx, icy, 20.0f, icon_color);
                 }
                 break;
+            case BTN_INDEX_PREV:
+                draw_icon_prev(icx, icy, 20.0f, icon_color);
+                break;
             case BTN_INDEX_NEXT:
                 draw_icon_next(icx, icy, 20.0f, icon_color);
+                break;
+            case BTN_INDEX_SHUFFLE:
+                draw_icon_shuffle(icx, icy, 20.0f, icon_color);
                 break;
             case BTN_INDEX_REPEAT:
                 draw_icon_repeat(icx, icy, 20.0f, state->repeat_state == REPEAT_TRACK, icon_color);

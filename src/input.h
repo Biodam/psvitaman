@@ -12,10 +12,10 @@
 
 typedef enum {
     BTN_INDEX_THEME = 0,
-    BTN_INDEX_SHUFFLE = 1,
+    BTN_INDEX_PLAY_PAUSE = 1,
     BTN_INDEX_PREV = 2,
-    BTN_INDEX_PLAY_PAUSE = 3,
-    BTN_INDEX_NEXT = 4,
+    BTN_INDEX_NEXT = 3,
+    BTN_INDEX_SHUFFLE = 4,
     BTN_INDEX_REPEAT = 5,
     BTN_INDEX_NONE = -1
 } DeckButtonIndex;

@@ -1,6 +1,6 @@
 # PSVitaman — Spotify Remote for PlayStation Vita
 
-[![Build PSVitaman VPK](https://github.com/fabio/psvitaman/actions/workflows/build.yml/badge.svg)](https://github.com/fabio/psvitaman/actions/workflows/build.yml)
+[![Build PSVitaman VPK](https://github.com/Biodam/psvitaman/actions/workflows/build.yml/badge.svg)](https://github.com/Biodam/psvitaman/actions/workflows/build.yml)
 [![VitaDB](https://img.shields.io/badge/VitaDB-Available-blue)](https://vitadb.rinnegatamante.it/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -18,10 +18,23 @@
 - **On-Screen QR Code Pairing**: Real-time high-contrast QR code generated directly on the PS Vita screen. Point your phone camera at the screen to immediately open the Spotify authorization page or re-pair devices.
 - **Physical & Touch Controls**: Seamless control with PS Vita face buttons/triggers or by tapping the on-screen mechanical transport buttons.
 - **Live HUD Display**: Track title marquee scrolling, Artist & Album names, millisecond-accurate time counter (`02:14 / 04:30`), volume percentage, and active Spotify device name.
-- **Threaded Network Engine**: Non-blocking Spotify Web API synchronization via `libcurl`, maintaining 60 FPS rendering on the Vita display.
-- **Resilient TLS/SSL**: Bundled with modern Mozilla CA bundle (`cacert.pem`) for HTTPS compatibility on all Vita firmware versions.
+- **Threaded Network Engine**: Non-blocking Spotify Web API synchronization via native Sony `SceHttp`/`SceSsl` with structured C exception handling (`setjmp`/`longjmp`), maintaining 60 FPS rendering on the Vita display.
+- **Resilient TLS/SSL**: Native hardware HTTPS with custom SSL handshake bypass and full iTLS-Enso support for TLS 1.2/1.3 communication with Spotify's cloud.
 
 ---
+
+## Requirements
+
+Just like `SharkF00D` / `libshacccg.suprx` is required for modern 3D ports, modern web services (Spotify, Cloudflare, GitHub) require **TLS 1.2+** encryption:
+
+1. **PlayStation Vita or PlayStation TV** (Firmware 3.60, 3.65 Enso, or 3.68+).
+2. **[iTLS-Enso](https://github.com/SKGleba/iTLS-Enso)** (Essential for Firmware 3.60 / 3.65):
+   - The PS Vita's original 2011 SSL library lacks modern root certificates and TLS 1.2 cipher suites.
+   - Install **`iTLS-Enso.vpk`** (via [VitaDB Downloader](https://vitadb.rinnegatamante.it/#/info/444) or GitHub).
+   - Launch iTLS-Enso and select **"Install the full iTLS package"**.
+   - Reboot your PS Vita. This upgrades the system SSL engine and root certificates console-wide.
+3. **Active Wi-Fi Connection** (PS Vita and smartphone connected to the same local network for one-tap QR pairing).
+4. **Spotify Account** (Free or Premium). Play music on any device (phone, PC, smart speaker) and control it directly from your Vita.
 
 ## Control Scheme
 
@@ -88,7 +101,7 @@ refresh_token = YOUR_REFRESH_TOKEN
 
 ## Installation (.vpk)
 
-1. Download `PSVitaman.vpk` from the [Releases](https://github.com/fabio/psvitaman/releases) page or install via **VitaDB Downloader**.
+1. Download `PSVitaman.vpk` from the [Releases](https://github.com/Biodam/psvitaman/releases) page or install via **VitaDB Downloader**.
 2. Open **VitaShell** on your PS Vita, navigate to the downloaded `.vpk`, and press $\times$ to install.
 3. Launch PSVitaman from the LiveArea.
 
@@ -101,7 +114,7 @@ The repository includes a GitHub Actions workflow that automatically compiles an
 
 ### Local Build (with VitaSDK installed)
 ```bash
-git clone https://github.com/fabio/psvitaman.git
+git clone https://github.com/Biodam/psvitaman.git
 cd psvitaman
 mkdir build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake ..

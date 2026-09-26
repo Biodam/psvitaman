@@ -360,6 +360,7 @@ bool http_server_start(int port, AppConfig *config) {
 void http_server_stop(void) {
     if (!s_running) return;
     s_running = false;
+    s_auth_received = false;
 
 #if defined(__psp2__) || defined(__VITA__)
     /* 100ms grace period to allow client response transmission to finish cleanly */
@@ -385,7 +386,15 @@ bool http_server_is_running(void) {
 }
 
 bool http_server_has_received_auth(void) {
-    return s_auth_received;
+    if (s_auth_received) {
+        s_auth_received = false;
+        return true;
+    }
+    return false;
+}
+
+void http_server_clear_auth_received(void) {
+    s_auth_received = false;
 }
 
 bool http_server_get_local_ip(char *ip_out, size_t max_len) {

@@ -20,8 +20,11 @@ void http_server_stop(void);
 /* Check if the server is currently running */
 bool http_server_is_running(void);
 
-/* Check if valid Spotify credentials were received and saved */
+/* Check if valid Spotify credentials were received and saved (edge-triggered, clears on read) */
 bool http_server_has_received_auth(void);
+
+/* Explicitly clear the auth received flag */
+void http_server_clear_auth_received(void);
 
 /* Retrieve local IP address string (e.g., "192.168.1.100").
  * Returns true if active IP found, false otherwise (defaults to "127.0.0.1"). */

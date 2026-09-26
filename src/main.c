@@ -126,8 +126,10 @@ int main(int argc, char *argv[]) {
                 has_error = false;
                 worker_stop();
                 remove("ux0:data/psvitaman/config.ini");
+                memset(&config, 0, sizeof(config));
                 config.is_valid = false;
                 show_qr_overlay = false;
+                http_server_clear_auth_received();
                 if (!http_server_is_running()) {
                     http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 }
@@ -135,16 +137,36 @@ int main(int argc, char *argv[]) {
         }
 #endif
 
+        /* Check if HTTP pairing server received auth credentials from phone (Setup Mode or QR Overlay) */
+        if (http_server_has_received_auth()) {
+            LOG_INFO("Auth received! Stopping HTTP server and starting worker");
+            http_server_stop();
+            show_qr_overlay = false;
+            error_clear();
+            if (config_load(&config) && config.is_valid) {
+                worker_stop();
+                worker_start(&config);
+            }
+        }
+
         if (config.is_valid) {
+            /* Failsafe: ensure worker is running when config is valid */
+            if (!worker_is_running()) {
+                LOG_INFO("Config is valid but worker is not running - starting worker");
+                worker_start(&config);
+            }
+
 #if defined(__psp2__) || defined(__VITA__)
             /* Pressing SELECT on the deck resets pairing and enters Setup Mode */
             if (!has_error && (input.pressed_buttons & SCE_CTRL_SELECT)) {
                 LOG_INFO("SELECT pressed on deck: resetting config and entering Setup Mode");
                 worker_stop();
                 remove("ux0:data/psvitaman/config.ini");
+                memset(&config, 0, sizeof(config));
                 config.is_valid = false;
                 show_qr_overlay = false;
                 error_clear();
+                http_server_clear_auth_received();
                 if (!http_server_is_running()) {
                     http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 }
@@ -184,19 +206,18 @@ int main(int argc, char *argv[]) {
             }
 #endif
         } else {
-            /* Check if HTTP pairing server received auth credentials from phone */
-            if (http_server_has_received_auth()) {
-                LOG_INFO("Auth received! Stopping HTTP server and starting worker");
-                http_server_stop();
-                show_qr_overlay = false;
-                error_clear();
-                if (config_load(&config) && config.is_valid) {
-                    worker_start(&config);
-                }
+            /* In Setup Mode (config.is_valid == false) */
+#if defined(__psp2__) || defined(__VITA__)
+            /* Pressing SELECT in Setup Mode wipes config cleanly */
+            if (input.pressed_buttons & SCE_CTRL_SELECT) {
+                LOG_INFO("SELECT pressed in Setup Mode: wiping config");
+                remove("ux0:data/psvitaman/config.ini");
+                memset(&config, 0, sizeof(config));
+                config.is_valid = false;
+                http_server_clear_auth_received();
             }
 
             /* If in Setup Mode, allow pressing START to reload config */
-#if defined(__psp2__) || defined(__VITA__)
             if (input.pressed_buttons & SCE_CTRL_START) {
                 if (config_load(&config) && config.is_valid) {
                     http_server_stop();
@@ -204,18 +225,6 @@ int main(int argc, char *argv[]) {
                 }
             }
 #endif
-        }
-
-        /* Also check if QR overlay in paired mode received new token */
-        if (show_qr_overlay && http_server_has_received_auth()) {
-            LOG_INFO("Re-pairing credentials received! Refreshing worker");
-            http_server_stop();
-            show_qr_overlay = false;
-            error_clear();
-            if (config_load(&config) && config.is_valid) {
-                worker_stop();
-                worker_start(&config);
-            }
         }
 
         /* Retrieve snapshot of playback state */

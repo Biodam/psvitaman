@@ -321,6 +321,10 @@ static void* worker_thread_func(void *argp)
 
 bool worker_start(const AppConfig *config) {
     if (!config) return false;
+    if (g_running) {
+        worker_stop();
+    }
+
     g_config = *config;
 
     memset(&g_playback_state, 0, sizeof(SpotifyPlaybackState));
@@ -333,16 +337,37 @@ bool worker_start(const AppConfig *config) {
 
 #if defined(__psp2__) || defined(__VITA__)
     g_mutex = sceKernelCreateMutex("psvitaman_worker_mtx", 0, 0, NULL);
-    if (g_mutex < 0) return false;
+    if (g_mutex < 0) {
+        LOG_ERROR("worker_start: sceKernelCreateMutex failed: 0x%08X", (unsigned int)g_mutex);
+        g_running = false;
+        return false;
+    }
 
     g_thid = sceKernelCreateThread("psvitaman_worker", worker_thread_func, 0x10000100, 0x20000, 0, 0, NULL);
-    if (g_thid < 0) return false;
+    if (g_thid < 0) {
+        LOG_ERROR("worker_start: sceKernelCreateThread failed: 0x%08X", (unsigned int)g_thid);
+        sceKernelDeleteMutex(g_mutex);
+        g_mutex = -1;
+        g_running = false;
+        return false;
+    }
 
-    if (sceKernelStartThread(g_thid, 0, NULL) < 0) return false;
+    int start_res = sceKernelStartThread(g_thid, 0, NULL);
+    if (start_res < 0) {
+        LOG_ERROR("worker_start: sceKernelStartThread failed: 0x%08X", (unsigned int)start_res);
+        sceKernelDeleteThread(g_thid);
+        g_thid = -1;
+        sceKernelDeleteMutex(g_mutex);
+        g_mutex = -1;
+        g_running = false;
+        return false;
+    }
 #else
     pthread_mutex_init(&g_mutex, NULL);
-    if (pthread_create(&g_thread, NULL, worker_thread_func, NULL) != 0)
+    if (pthread_create(&g_thread, NULL, worker_thread_func, NULL) != 0) {
+        g_running = false;
         return false;
+    }
 #endif
 
     return true;
@@ -398,3 +423,8 @@ bool worker_is_syncing(void) {
 bool worker_is_authenticated(void) {
     return g_authenticated;
 }
+
+bool worker_is_running(void) {
+    return g_running;
+}
+

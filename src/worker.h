@@ -39,4 +39,7 @@ bool worker_is_syncing(void);
 /* Check if initial authentication succeeded */
 bool worker_is_authenticated(void);
 
+/* Check if worker thread is currently running */
+bool worker_is_running(void);
+
 #endif /* PSVITAMAN_WORKER_H */

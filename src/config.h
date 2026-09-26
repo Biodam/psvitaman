@@ -26,6 +26,7 @@ typedef struct {
     char client_id[128];
     char client_secret[128];
     char refresh_token[512];
+    int theme;
     bool is_valid;
     bool template_created;
 } AppConfig;

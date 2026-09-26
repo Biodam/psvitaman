@@ -26,6 +26,10 @@ static int ini_config_handler(void* user, const char* section, const char* name,
             strncpy(config->refresh_token, value, sizeof(config->refresh_token) - 1);
             config->refresh_token[sizeof(config->refresh_token) - 1] = '\0';
         }
+    } else if (strcmp(section, "ui") == 0 || strcmp(section, "settings") == 0) {
+        if (strcmp(name, "theme") == 0) {
+            config->theme = atoi(value);
+        }
     }
     return 1;
 }
@@ -90,6 +94,8 @@ bool config_save(const AppConfig *config) {
     fprintf(f, "client_id = %s\n", config->client_id);
     fprintf(f, "client_secret = %s\n", config->client_secret);
     fprintf(f, "refresh_token = %s\n", config->refresh_token);
+    fprintf(f, "\n[ui]\n");
+    fprintf(f, "theme = %d\n", config->theme);
 
     fclose(f);
     return true;

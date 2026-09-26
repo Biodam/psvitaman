@@ -28,4 +28,19 @@ void ui_render(const SpotifyPlaybackState *state, int interpolated_progress_ms,
               const InputState *input, const AppConfig *config, bool is_syncing,
               bool show_qr_overlay, const AppError *error);
 
+typedef enum {
+    THEME_TPS_L2 = 0,       /* 1979 Original Walkman (Blue/Silver + Orange accent button) */
+    THEME_SPORTS_YELLOW,    /* 1983 Sports Walkman WM-F5 (Vivid Yellow/Black + Turquoise button) */
+    THEME_GRAPHITE_DD,      /* 1982 Walkman WM-DD / WM-2 (Charcoal Anthracite / Chrome Platinum) */
+    THEME_STEALTH_OLED,     /* Minimalist AMOLED True Black / Neon Green (0% power on OLED) */
+    THEME_COUNT
+} ThemeId;
+
+/* Theme management */
+void ui_set_theme(int theme_id);
+int ui_get_theme(void);
+void ui_cycle_theme(void);
+void ui_cycle_theme_prev(void);
+const char *ui_get_theme_name(int theme_id);
+
 #endif /* PSVITAMAN_UI_H */

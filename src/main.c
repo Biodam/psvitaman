@@ -85,6 +85,9 @@ int main(int argc, char *argv[]) {
         http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
     }
 
+    /* Apply user's saved theme from config */
+    ui_set_theme(config.theme);
+
 #if defined(__psp2__) || defined(__VITA__)
     uint64_t last_tick = sceKernelGetProcessTimeWide();
 #endif
@@ -93,6 +96,11 @@ int main(int argc, char *argv[]) {
     bool show_qr_overlay = false;
 
     while (app_running) {
+#if defined(__psp2__) || defined(__VITA__)
+        /* Prevent screen dimming and auto-suspend while running */
+        sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+#endif
+
         /* Calculate Delta Time */
         float dt = 0.0166f; /* Default ~60fps */
 #if defined(__psp2__) || defined(__VITA__)
@@ -226,6 +234,27 @@ int main(int argc, char *argv[]) {
             }
 #endif
         }
+
+#if defined(__psp2__) || defined(__VITA__)
+        /* Theme Cycling (D-pad Left / Right or touch THEME button) */
+        if (!show_qr_overlay && !has_error) {
+            if (input.pressed_buttons & SCE_CTRL_RIGHT) {
+                ui_cycle_theme();
+                config.theme = ui_get_theme();
+                if (config.is_valid) {
+                    config_save(&config);
+                }
+                LOG_INFO("Theme changed to: %s (%d)", ui_get_theme_name(config.theme), config.theme);
+            } else if (input.pressed_buttons & SCE_CTRL_LEFT) {
+                ui_cycle_theme_prev();
+                config.theme = ui_get_theme();
+                if (config.is_valid) {
+                    config_save(&config);
+                }
+                LOG_INFO("Theme changed to: %s (%d)", ui_get_theme_name(config.theme), config.theme);
+            }
+        }
+#endif
 
         /* Retrieve snapshot of playback state */
         SpotifyPlaybackState playback;

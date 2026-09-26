@@ -14,42 +14,69 @@
 ## Features
 
 - **Retro Walkman Aesthetic**: Authentic cassette shell design, tape window, tape ribbon, and dual rotating cassette reels.
+- **Walkman-Inspired Themes**: 4 authentic colorways inspired by iconic Sony models (1979 TPS-L2 Blue, 1983 WM-F5 Sports Yellow, 1982 WM-DD Graphite, and 0-IRE Stealth AMOLED Black).
+- **AMOLED Burn-In Safety**: Periodic 8-point orbital pixel shifting ($\pm 2\text{px}$) designed specifically for PS Vita 1000 OLED displays to prevent static image burn-in.
+- **Continuous Desk Playback**: Prevents the PS Vita screen from dimming or going to sleep while active.
 - **Dynamic Cassette Spools**: Real-time rotational physics when tracks are playing, with progressive tape radius (left supply reel shrinks, right take-up reel expands).
 - **On-Screen QR Code Pairing**: Real-time high-contrast QR code generated directly on the PS Vita screen. Point your phone camera at the screen to immediately open the Spotify authorization page or re-pair devices.
-- **Physical & Touch Controls**: Seamless control with PS Vita face buttons/triggers or by tapping the on-screen mechanical transport buttons.
+- **Physical & Touch Controls**: 6 mechanical transport buttons positioned across the bottom of the screen with vector iconography and tactile visual feedback.
 - **Live HUD Display**: Track title marquee scrolling, Artist & Album names, millisecond-accurate time counter (`02:14 / 04:30`), volume percentage, and active Spotify device name.
-- **Threaded Network Engine**: Non-blocking Spotify Web API synchronization via native Sony `SceHttp`/`SceSsl` with structured C exception handling (`setjmp`/`longjmp`), maintaining 60 FPS rendering on the Vita display.
-- **Resilient TLS/SSL**: Native hardware HTTPS with custom SSL handshake bypass and full iTLS-Enso support for TLS 1.2/1.3 communication with Spotify's cloud.
+- **Embedded MbedTLS Network Engine**: Full TLS 1.2/1.3 communication with Spotify Web API using built-in MbedTLS 3.6.5. No external SSL modules or `iTLS-Enso` required!
 
 ---
 
 ## Requirements
 
-Just like `SharkF00D` / `libshacccg.suprx` is required for modern 3D ports, modern web services (Spotify, Cloudflare, GitHub) require **TLS 1.2+** encryption:
+1. **PlayStation Vita or PlayStation TV** (Any firmware: 3.60, 3.65 Enso, or 3.68–3.74).
+2. **Active Wi-Fi Connection** (PS Vita and smartphone connected to the same local network for one-tap QR pairing).
+3. **Spotify Account** (Free or Premium). Play music on any device (phone, PC, smart speaker) and control it directly from your Vita.
 
-1. **PlayStation Vita or PlayStation TV** (Firmware 3.60, 3.65 Enso, or 3.68+).
-2. **[iTLS-Enso](https://github.com/SKGleba/iTLS-Enso)** (Essential for Firmware 3.60 / 3.65):
-   - The PS Vita's original 2011 SSL library lacks modern root certificates and TLS 1.2 cipher suites.
-   - Install **`iTLS-Enso.vpk`** (via [VitaDB Downloader](https://vitadb.rinnegatamante.it/#/info/444) or GitHub).
-   - Launch iTLS-Enso and select **"Install the full iTLS package"**.
-   - Reboot your PS Vita. This upgrades the system SSL engine and root certificates console-wide.
-3. **Active Wi-Fi Connection** (PS Vita and smartphone connected to the same local network for one-tap QR pairing).
-4. **Spotify Account** (Free or Premium). Play music on any device (phone, PC, smart speaker) and control it directly from your Vita.
+> [!NOTE]
+> Unlike older homebrew that relied on the Vita's legacy 2011 SSL stack, **PSVitaman embeds MbedTLS 3.6.5 statically**. It communicates securely with Spotify's modern cloud servers out of the box without requiring `iTLS-Enso` or firmware modifications.
+
+---
 
 ## Control Scheme
 
-| Physical Input | Touchscreen Equivalent | Action | Spotify Endpoint |
+```
++--------------------------------------------------------------------+
+| [HUD]  TRACK TITLE - ARTIST                      VOL: 85%  [WIFI]  |
++--------------------------------------------------------------------+
+|                                                                    |
+|                      CASSETTE TAPE BAY                             |
+|          [ (O)           === TAPE ===           (O) ]              |
+|                                                                    |
++--------------------------------------------------------------------+
+| [THEME]   [SHUFFLE]    [PREV]      [PLAY]      [NEXT]    [REPEAT]  |
+|  [< >]      [SQ]        [L]         [X]         [R]       [TRI]    |
++--------------------------------------------------------------------+
+```
+
+| Physical Input | Touchscreen Equivalent | Action | Description |
 |---|---|---|---|
-| **Cross ($\times$)** | Tap **PLAY / PAUSE** button | Toggle Play / Pause | `PUT /v1/me/player/play` or `pause` |
-| **R-Trigger** | Tap **NEXT** button | Skip to Next Track | `POST /v1/me/player/next` |
-| **L-Trigger** | Tap **PREV** button | Skip to Previous Track | `POST /v1/me/player/previous` |
-| **Square ($\square$)** | Tap **SHUFFLE** button | Toggle Shuffle On/Off | `PUT /v1/me/player/shuffle` |
-| **Triangle ($\triangle$)** | Tap **REPEAT** button | Cycle Repeat Mode (Off/Context/Track) | `PUT /v1/me/player/repeat` |
-| **D-Pad Up** | — | Volume Up (+5%) | `PUT /v1/me/player/volume` |
-| **D-Pad Down** | — | Volume Down (-5%) | `PUT /v1/me/player/volume` |
-| **Select** | — | Toggle QR Code Pairing Modal Overlay | Overlay |
-| **Circle ($\bigcirc$)** | — | Close QR Modal Overlay | Overlay |
-| **Start** | — | Force Refresh State / Reload Config | `GET /v1/me/player` |
+| **Cross ($\times$)** | Tap **PLAY / PAUSE** button | Toggle Play / Pause | Start or pause Spotify playback |
+| **R-Trigger** | Tap **NEXT** button | Skip Next Track | Skip to the next song |
+| **L-Trigger** | Tap **PREV** button | Skip Previous Track | Skip to previous song or track start |
+| **Square ($\square$)** | Tap **SHUFFLE** button | Toggle Shuffle | Toggle shuffle mode on/off |
+| **Triangle ($\triangle$)** | Tap **REPEAT** button | Cycle Repeat Mode | Cycle Repeat Off $\to$ Context $\to$ Track |
+| **D-Pad Right** | Tap **THEME** button (`[< >]`) | Next Theme | Cycle forward through Walkman themes |
+| **D-Pad Left** | — | Previous Theme | Cycle backward through Walkman themes |
+| **D-Pad Up** | — | Volume Up | Increase playback volume (+5%) |
+| **D-Pad Down** | — | Volume Down | Decrease playback volume (-5%) |
+| **Select** | — | Reset Pairing | Wipe configuration & enter Setup Mode |
+| **Start** | — | Force Refresh | Force immediate state refresh / reload config |
+| **Circle ($\bigcirc$)** | — | Dismiss Error Modal | Clear on-screen error dialogue |
+
+---
+
+## Themes
+
+Switch themes on the fly using **D-Pad Left / Right** or by tapping the red circular **THEME** button on the bottom deck. Your selection is automatically saved to `ux0:data/psvitaman/config.ini`:
+
+- **TPS-L2 (1979)**: The original metallic blue and brushed silver styling that started it all, accented with the classic "Hot Line" orange button.
+- **Sports WM-F5 (1983)**: Bold Action Yellow body with matte black accents and turquoise highlights, celebrating Sony's legendary rugged cassette player.
+- **Graphite WM-DD (1982)**: Premium dark charcoal anthracite cassette chassis with chrome and platinum trim.
+- **Stealth AMOLED**: 0-IRE true black background with neon phosphor green accents, eliminating OLED power draw on the PS Vita 1000 display.
 
 ---
 

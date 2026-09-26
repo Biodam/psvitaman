@@ -5,6 +5,7 @@
 #include "root_certs.h"
 #include "logger.h"
 
+#include <stddef.h>
 #if defined(__psp2__) || defined(__VITA__)
 #include <psp2/net/http.h>
 

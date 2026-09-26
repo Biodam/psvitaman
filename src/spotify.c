@@ -66,13 +66,22 @@ void spotify_cleanup(void) {
 bool spotify_refresh_token(const char *client_id, const char *client_secret,
                           const char *refresh_token, char *access_token_out,
                           size_t token_max, int *expires_in_out) {
-    if (!client_id || !refresh_token || !access_token_out)
+    LOG_INFO("spotify_refresh_token: entered");
+    if (!client_id || !refresh_token || !access_token_out) {
+        LOG_ERROR("spotify_refresh_token: invalid NULL argument passed");
         return false;
-    if (strlen(client_id) == 0 || strlen(refresh_token) == 0)
+    }
+    if (strlen(client_id) == 0 || strlen(refresh_token) == 0) {
+        LOG_ERROR("spotify_refresh_token: client_id or refresh_token is empty");
         return false;
+    }
 
     CURL *curl = curl_easy_init();
-    if (!curl) return false;
+    if (!curl) {
+        LOG_ERROR("spotify_refresh_token: curl_easy_init returned NULL");
+        return false;
+    }
+    LOG_INFO("spotify_refresh_token: curl handle created");
 
     MemoryBuffer chunk = {0};
     chunk.data = malloc(1);
@@ -86,6 +95,7 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
 
     /* If client_secret is provided, use Basic Auth header; otherwise PKCE mode */
     if (client_secret && strlen(client_secret) > 0 && strstr(client_secret, "YOUR_") == NULL) {
+        LOG_INFO("spotify_refresh_token: using Basic Auth mode");
         char creds[300];
         snprintf(creds, sizeof(creds), "%s:%s", client_id, client_secret);
         char b64_creds[512];
@@ -97,6 +107,7 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
 
         snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s", escaped_token);
     } else {
+        LOG_INFO("spotify_refresh_token: using PKCE direct mode");
         char *escaped_id = curl_easy_escape(curl, client_id, 0);
         snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s&client_id=%s",
                  escaped_token, escaped_id);
@@ -111,9 +122,12 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
     configure_curl_ssl(curl);
 
+    LOG_INFO("spotify_refresh_token: calling curl_easy_perform to accounts.spotify.com...");
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    LOG_INFO("spotify_refresh_token: curl_easy_perform finished: res=%d (%s), http_code=%ld",
+             res, curl_easy_strerror(res), http_code);
 
     bool success = false;
     if (res == CURLE_OK && http_code == 200 && chunk.data) {

@@ -167,7 +167,9 @@ static void* worker_thread_func(void *argp)
 #if defined(__psp2__) || defined(__VITA__)
         /* Check Wi-Fi state */
         int net_state = 0;
-        if (sceNetCtlInetGetState(&net_state) >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
+        int ctl_res = sceNetCtlInetGetState(&net_state);
+        LOG_INFO("Worker Wi-Fi status check: result=%d, state=%d", ctl_res, net_state);
+        if (ctl_res >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
             error_set(APP_ERR_WIFI_DISCONNECTED, "Wi-Fi Disconnected",
                       "PS Vita is not connected to a Wi-Fi network. Please check Vita Settings.",
                       "Press [X] to dismiss");
@@ -182,6 +184,8 @@ static void* worker_thread_func(void *argp)
             char new_token[512] = {0};
             int expires_in = 3600;
 
+            LOG_INFO("Worker: calling spotify_refresh_token (client_id='%.8s...', token_len=%u)",
+                     g_config.client_id, (unsigned int)strlen(g_config.refresh_token));
             if (spotify_refresh_token(g_config.client_id, g_config.client_secret,
                                      g_config.refresh_token, new_token,
                                      sizeof(new_token), &expires_in)) {

@@ -198,8 +198,14 @@ const char *ui_get_theme_name(int theme_id) {
 
 static vita2d_pgf *s_font = NULL;
 
-/* Animation State */
-static float s_spool_angle = 0.0f;
+/* Tape Reel Physics & Animation State */
+static float s_left_spool_angle = 0.0f;
+static float s_right_spool_angle = 0.0f;
+static float s_playback_speed = 0.0f;         /* Motor spin-up / spin-down inertia: 0.0 -> 1.0 */
+static float s_fast_seek_boost = 0.0f;        /* High-speed whir burst on track skip / seek */
+static float s_flutter_time = 0.0f;           /* Wow & flutter mechanical phase */
+static float s_tape_counter_rotations = 0.0f; /* Mechanical counter driven by take-up reel */
+static int s_prev_progress_ms = 0;
 static float s_marquee_offset = 0.0f;
 static char s_prev_track[SPOTIFY_TRACK_NAME_MAX] = {0};
 
@@ -224,26 +230,73 @@ void ui_cleanup(void) {
 }
 
 void ui_update(float delta_time, const SpotifyPlaybackState *state, int interpolated_progress_ms) {
-    (void)interpolated_progress_ms;
-
-    /* Rotate spools during active playback */
-    if (state && state->is_playing) {
-        s_spool_angle += 140.0f * delta_time;
-        if (s_spool_angle >= 360.0f) {
-            s_spool_angle -= 360.0f;
-        }
-    }
-
-    /* Reset marquee offset if track changed */
+    /* 1. Track change & seek detection -> trigger authentic fast-forward whir burst */
     if (state && strcmp(state->track_name, s_prev_track) != 0) {
         utils_safe_strncpy(s_prev_track, state->track_name, sizeof(s_prev_track));
         s_marquee_offset = 0.0f;
+        s_fast_seek_boost = 3.5f; /* 3.5x speed burst */
     }
 
-    /* Marquee scroll animation */
+    if (s_prev_progress_ms > 0 && abs(interpolated_progress_ms - s_prev_progress_ms) > 2500) {
+        s_fast_seek_boost = 3.0f; /* Fast whir on track seek / skip */
+    }
+    s_prev_progress_ms = interpolated_progress_ms;
+
+    if (s_fast_seek_boost > 0.0f) {
+        s_fast_seek_boost -= 5.0f * delta_time;
+        if (s_fast_seek_boost < 0.0f) s_fast_seek_boost = 0.0f;
+    }
+
+    /* 2. Motor Inertia (smooth mechanical spin-up & spin-down) */
+    float target_speed = (state && state->is_playing) ? 1.0f : 0.0f;
+    float motor_accel = (target_speed > s_playback_speed) ? 9.0f : 5.0f;
+    s_playback_speed += (target_speed - s_playback_speed) * motor_accel * delta_time;
+    if (s_playback_speed < 0.001f) s_playback_speed = 0.0f;
+
+    /* 3. Wow & Flutter (mechanical belt-drive micro-harmonics) */
+    s_flutter_time += delta_time;
+    if (s_flutter_time >= 62.83f) s_flutter_time -= 62.83f;
+    float flutter = 1.0f + 0.022f * sinf(s_flutter_time * 4.2f) + 0.010f * cosf(s_flutter_time * 11.8f);
+
+    float effective_speed = (s_playback_speed + s_fast_seek_boost) * flutter;
+
+    /* 4. Dynamic Reel Angular Velocities (Linear Velocity Conservation v = w * r) */
+    float progress_ratio = 0.0f;
+    if (state && state->duration_ms > 0) {
+        progress_ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
+        if (progress_ratio < 0.0f) progress_ratio = 0.0f;
+        if (progress_ratio > 1.0f) progress_ratio = 1.0f;
+    }
+
+    /* Exact cross-sectional tape area conservation: r = sqrt(r_min^2 + (r_max^2 - r_min^2) * ratio) */
+    const float min_r = 26.0f;
+    const float max_r = 66.0f;
+    const float min_r_sq = min_r * min_r;
+    const float max_r_sq = max_r * max_r;
+    float left_radius  = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * (1.0f - progress_ratio));
+    float right_radius = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * progress_ratio);
+
+    if (effective_speed > 0.001f) {
+        /* Base constant calibrated for standard 4.76 cm/s tape transport visual speed */
+        const float K = 5200.0f; /* deg*px / s */
+        float omega_left = (K / left_radius) * effective_speed;
+        float omega_right = (K / right_radius) * effective_speed;
+
+        /* Both spools rotate counter-clockwise */
+        s_left_spool_angle -= omega_left * delta_time;
+        s_right_spool_angle -= omega_right * delta_time;
+
+        /* Mechanical counter geared to take-up reel rotation */
+        s_tape_counter_rotations += (omega_right * delta_time) / 360.0f;
+
+        if (s_left_spool_angle <= -360.0f) s_left_spool_angle += 360.0f;
+        if (s_right_spool_angle <= -360.0f) s_right_spool_angle += 360.0f;
+    }
+
+    /* 5. Marquee scroll animation */
     s_marquee_offset += 45.0f * delta_time;
 
-    /* AMOLED Burn-In Orbit: shift canvas every 45 seconds */
+    /* 6. AMOLED Burn-In Orbit: shift canvas every 45 seconds */
     s_burn_in_timer += delta_time;
     if (s_burn_in_timer >= 45.0f) {
         s_burn_in_timer = 0.0f;
@@ -340,40 +393,64 @@ static void draw_screw(float x, float y) {
     vita2d_draw_line(x - 4, y, x + 4, y, RGBA8(70, 75, 85, 255));
 }
 
-static void draw_spool(float cx, float cy, float outer_radius, float angle_deg, const AppTheme *theme) {
-    /* Outer spooled magnetic tape */
-    if (outer_radius > 26.0f) {
-        vita2d_draw_fill_circle(cx, cy, outer_radius, theme->tape_brown);
-        /* Wound tape density ring accents */
-        for (float r = 32.0f; r < outer_radius - 2.0f; r += 8.0f) {
-            vita2d_draw_fill_circle(cx, cy, r, (theme->tape_brown & 0x00FFFFFF) | 0x28000000);
+static void draw_spool(float cx, float cy, float outer_radius, float angle_deg, bool is_leader, const AppTheme *theme) {
+    /* 1. Outer Spooled Magnetic Tape Pack */
+    if (outer_radius > 26.5f) {
+        unsigned int tape_col = is_leader ? RGBA8(215, 190, 190, 220) : theme->tape_brown;
+        vita2d_draw_fill_circle(cx, cy, outer_radius, tape_col);
+
+        /* Dense concentric tape pack winding layers */
+        for (float r = 29.5f; r < outer_radius - 1.5f; r += 3.5f) {
+            unsigned int layer_col = is_leader
+                ? RGBA8(235, 215, 215, 160)
+                : ((theme->tape_brown & 0x00FFFFFF) | 0x22000000);
+            vita2d_draw_fill_circle(cx, cy, r, layer_col);
         }
+
+        /* Subtle tape pack rim shadow */
+        vita2d_draw_fill_circle(cx, cy, outer_radius, 0x18000000);
+
+        /* Specular light sheen on tightly wound tape pack (top-right quadrant) */
+        float sheen_dist = (outer_radius + 26.0f) * 0.32f;
+        float sheen_rad  = (outer_radius - 26.0f) * 0.36f;
+        vita2d_draw_fill_circle(cx + sheen_dist, cy - sheen_dist, sheen_rad, RGBA8(255, 255, 255, 16));
     }
 
-    /* Outer plastic spool flange */
-    vita2d_draw_fill_circle(cx, cy, 27.0f, RGBA8(215, 218, 225, 255));
-    /* White plastic cassette hub */
+    /* 2. Outer Plastic Spool Flange Rim */
+    vita2d_draw_fill_circle(cx, cy, 27.0f, RGBA8(218, 222, 228, 255));
+
+    /* 3. White Molded Plastic Cassette Hub Core */
     vita2d_draw_fill_circle(cx, cy, 25.0f, theme->spool_hub);
     vita2d_draw_fill_circle(cx, cy, 14.0f, theme->cassette_inner);
 
-    /* 6 teeth / spokes radiating outward */
+    /* 4. Six Molded Drive Teeth with Mechanical Depth */
     for (int i = 0; i < 6; i++) {
         float rad = (angle_deg + i * 60.0f) * (3.14159265f / 180.0f);
-        float x1 = cx + cosf(rad) * 13.0f;
-        float y1 = cy + sinf(rad) * 13.0f;
-        float x2 = cx + cosf(rad) * 25.0f;
-        float y2 = cy + sinf(rad) * 25.0f;
+        float cos_a = cosf(rad);
+        float sin_a = sinf(rad);
+
+        float x1 = cx + cos_a * 12.5f;
+        float y1 = cy + sin_a * 12.5f;
+        float x2 = cx + cos_a * 25.0f;
+        float y2 = cy + sin_a * 25.0f;
+
+        /* Molded tooth spoke */
         vita2d_draw_line(x1, y1, x2, y2, theme->spool_gear);
-        float px = -sinf(rad) * 1.5f;
-        float py = cosf(rad) * 1.5f;
+
+        /* Tooth thickness & bevel highlights */
+        float px = -sin_a * 1.5f;
+        float py = cos_a * 1.5f;
         vita2d_draw_line(x1 + px, y1 + py, x2 + px, y2 + py, theme->spool_gear);
+        vita2d_draw_line(x1 - px, y1 - py, x2 - px, y2 - py, RGBA8(240, 245, 250, 180));
     }
 
-    /* Metal spindle pin at very center */
-    vita2d_draw_fill_circle(cx, cy, 4.0f, RGBA8(180, 185, 195, 255));
+    /* 5. Center Steel Drive Spindle Pin with Specular Highlight */
+    vita2d_draw_fill_circle(cx, cy, 4.5f, RGBA8(195, 200, 210, 255));
+    vita2d_draw_fill_circle(cx, cy, 2.0f, RGBA8(65, 70, 80, 255));
+    vita2d_draw_fill_circle(cx - 1.0f, cy - 1.0f, 1.0f, RGBA8(255, 255, 255, 220));
 }
 
-static void draw_tape_counter(float kx, float ky, int interpolated_progress_ms, const AppTheme *theme) {
+static void draw_tape_counter(float kx, float ky, int counter_val, const AppTheme *theme) {
     float kw = 48.0f;
     float kh = 30.0f;
     draw_beveled_box(kx, ky, kw, kh, RGBA8(10, 12, 16, 255), theme->border_dark, theme->border_light);
@@ -382,9 +459,8 @@ static void draw_tape_counter(float kx, float ky, int interpolated_progress_ms, 
         /* "COUNTER" label above */
         vita2d_pgf_draw_text(s_font, (int)kx, (int)(ky - 5), theme->text_muted, 0.55f, "COUNTER");
 
-        int counter_val = (interpolated_progress_ms / 1000) % 1000;
         char c_buf[8];
-        snprintf(c_buf, sizeof(c_buf), "%03d", counter_val);
+        snprintf(c_buf, sizeof(c_buf), "%03d", counter_val % 1000);
 
         /* 3 rotary digit slots */
         for (int i = 0; i < 3; i++) {
@@ -604,11 +680,12 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     /* Deep Sunken Acrylic Window Cavity */
     draw_beveled_box(wx, wy, ww, wh, theme->cassette_inner, theme->border_dark, theme->border_light);
 
-    /* Mechanical Tape Counter (Left of Window) */
-    draw_tape_counter(sx + 10.0f, wy + 40.0f, interpolated_progress_ms, theme);
+    /* Mechanical Tape Counter (Left of Window) - geared to right spool rotation */
+    int counter_val = (int)(s_tape_counter_rotations * 1.5f + (float)interpolated_progress_ms * 0.001f * 0.8f) % 1000;
+    draw_tape_counter(sx + 10.0f, wy + 40.0f, counter_val, theme);
 
-    /* Stereo LED VU Meters (Right of Window) */
-    draw_vu_meters(sx + sw - 60.0f, wy + 18.0f, state->is_playing, s_spool_angle, theme);
+    /* Stereo LED VU Meters (Right of Window) - synchronized to flutter/playback phase */
+    draw_vu_meters(sx + sw - 60.0f, wy + 18.0f, state->is_playing, s_flutter_time, theme);
 
     /* Stamped "AUTO STOP" Header inside window glass */
     if (s_font) {
@@ -617,7 +694,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy + 18), (theme->border_light & 0x00FFFFFF) | 0x99000000, 0.65f, auto_stop);
     }
 
-    /* Physics-inspired tape roll geometry */
+    /* Physics-inspired tape roll geometry (Conservation of Cross-Sectional Tape Area) */
     float progress_ratio = 0.0f;
     if (state->duration_ms > 0) {
         progress_ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
@@ -625,21 +702,55 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         if (progress_ratio > 1.0f) progress_ratio = 1.0f;
     }
 
-    float left_radius  = 26.0f + 42.0f * sqrtf(1.0f - progress_ratio);
-    float right_radius = 26.0f + 42.0f * sqrtf(progress_ratio);
+    const float min_r = 26.0f;
+    const float max_r = 66.0f;
+    const float min_r_sq = min_r * min_r;
+    const float max_r_sq = max_r * max_r;
+    float left_radius  = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * (1.0f - progress_ratio));
+    float right_radius = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * progress_ratio);
 
     float left_cx  = wx + 135.0f;
     float right_cx = wx + ww - 135.0f;
     float spool_cy = wy + wh * 0.5f - 2.0f;
 
-    /* Magnetic tape ribbon running across bottom guide rollers */
-    vita2d_draw_rectangle(left_cx - 45, spool_cy + 50, (right_cx - left_cx) + 90, 8, theme->tape_brown);
-    vita2d_draw_fill_circle(left_cx - 38, spool_cy + 54, 6, RGBA8(160, 165, 175, 255));
-    vita2d_draw_fill_circle(right_cx + 38, spool_cy + 54, 6, RGBA8(160, 165, 175, 255));
+    /* Dual Rotating Cassette Spools with Dynamic Linear Speed Physics */
+    bool left_is_leader = (progress_ratio > 0.985f);
+    bool right_is_leader = (progress_ratio < 0.015f);
+    draw_spool(left_cx, spool_cy, left_radius, s_left_spool_angle, left_is_leader, theme);
+    draw_spool(right_cx, spool_cy, right_radius, s_right_spool_angle, right_is_leader, theme);
 
-    /* Dual Rotating Cassette Spools */
-    draw_spool(left_cx, spool_cy, left_radius, s_spool_angle, theme);
-    draw_spool(right_cx, spool_cy, right_radius, s_spool_angle, theme);
+    /* Tangential Tape Ribbon Path: peeling from supply reel, across rollers, into take-up reel */
+    float roller_y = spool_cy + 52.0f;
+    float roller_L_x = left_cx - 38.0f;
+    float roller_R_x = right_cx + 38.0f;
+
+    /* Left unspooling ribbon: peels tangentially from outer edge of supply reel */
+    float peel_L_x = left_cx - left_radius + 3.0f;
+    float peel_L_y = spool_cy + left_radius * 0.42f;
+    for (int t = -2; t <= 2; t++) {
+        vita2d_draw_line(peel_L_x + t, peel_L_y, roller_L_x + t, roller_y - 2.0f, theme->tape_brown);
+    }
+
+    /* Horizontal magnetic tape ribbon across capstan & playback head notch */
+    vita2d_draw_rectangle(roller_L_x - 3.0f, roller_y - 3.0f, (roller_R_x - roller_L_x) + 6.0f, 6.0f, theme->tape_brown);
+    /* Specular oxide sheen line along tape run */
+    vita2d_draw_line(roller_L_x, roller_y - 1.0f, roller_R_x, roller_y - 1.0f, (theme->tape_brown & 0x00FFFFFF) | 0x44000000);
+
+    /* Right intake ribbon: feeds tangentially into outer edge of take-up reel */
+    float peel_R_x = right_cx + right_radius - 3.0f;
+    float peel_R_y = spool_cy + right_radius * 0.42f;
+    for (int t = -2; t <= 2; t++) {
+        vita2d_draw_line(roller_R_x + t, roller_y - 2.0f, peel_R_x + t, peel_R_y, theme->tape_brown);
+    }
+
+    /* Left & Right Flanged Tape Guide Rollers (drawn over ribbon for authentic mechanical wrap) */
+    vita2d_draw_fill_circle(roller_L_x, roller_y, 6.0f, RGBA8(195, 200, 210, 255));
+    vita2d_draw_fill_circle(roller_L_x, roller_y, 3.5f, RGBA8(110, 115, 125, 255));
+    vita2d_draw_fill_circle(roller_L_x, roller_y, 1.5f, RGBA8(240, 245, 250, 255));
+
+    vita2d_draw_fill_circle(roller_R_x, roller_y, 6.0f, RGBA8(195, 200, 210, 255));
+    vita2d_draw_fill_circle(roller_R_x, roller_y, 3.5f, RGBA8(110, 115, 125, 255));
+    vita2d_draw_fill_circle(roller_R_x, roller_y, 1.5f, RGBA8(240, 245, 250, 255));
 
     /* Center tape index scale lines on acrylic window */
     float center_x = wx + ww * 0.5f;

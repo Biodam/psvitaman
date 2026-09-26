@@ -964,26 +964,35 @@ static bool spotify_send_rest_cmd(const char *access_token, const char *url, Htt
     char auth_header[600];
     snprintf(auth_header, sizeof(auth_header), "Bearer %s", access_token);
 
+    HttpResponseBuffer resp = {0};
     int http_status = 0;
-    bool ok = do_http_request(url, method, auth_header, NULL, "", 0, NULL, &http_status);
+    bool ok = do_http_request(url, method, auth_header, NULL, "", 0, &resp, &http_status);
 
     if (ok) {
         if (http_status >= 200 && http_status < 300) {
+            if (resp.data) free(resp.data);
             return true;
         } else if (http_status == 404) {
             LOG_WARN("Spotify command (%s) failed: HTTP 404 No Active Device", url);
         } else if (http_status == 403) {
-            LOG_ERROR("Spotify command (%s) failed: HTTP 403 Premium Required", url);
-            error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
-                      "Spotify Web API restricts player control to Premium subscribers.",
-                      "Press [X] to dismiss");
+            LOG_WARN("Spotify command (%s) returned 403: %s",
+                     url, (resp.data && resp.size > 0) ? resp.data : "(none)");
+            if (resp.data && strstr(resp.data, "PREMIUM_REQUIRED")) {
+                error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
+                          "Spotify Web API restricts player control to Premium subscribers.",
+                          "Press [X] to dismiss");
+            } else {
+                LOG_WARN("Command (%s) disallowed by current track/playlist context", url);
+            }
         } else {
-            LOG_WARN("Spotify command (%s) returned HTTP %d", url, http_status);
+            LOG_WARN("Spotify command (%s) returned HTTP %d: %s",
+                     url, http_status, (resp.data && resp.size > 0) ? resp.data : "(none)");
         }
     } else {
         LOG_ERROR("Spotify command (%s) network error", url);
     }
 
+    if (resp.data) free(resp.data);
     return false;
 }
 
@@ -1158,9 +1167,20 @@ bool spotify_set_volume(const char *access_token, int volume_percent) {
 }
 
 bool spotify_set_shuffle(const char *access_token, bool state) {
-    char url[128];
+    char url[256];
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s", state ? "true" : "false");
-    return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
+    if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
+        return true;
+    }
+
+    /* Fallback: specify active device_id */
+    char dev_id[128] = {0};
+    if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s&device_id=%s",
+                 state ? "true" : "false", dev_id);
+        return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
+    }
+    return false;
 }
 
 bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
@@ -1168,7 +1188,18 @@ bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
     if (mode == REPEAT_CONTEXT) state_str = "context";
     else if (mode == REPEAT_TRACK) state_str = "track";
 
-    char url[128];
+    char url[256];
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s", state_str);
-    return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
+    if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
+        return true;
+    }
+
+    /* Fallback: specify active device_id */
+    char dev_id[128] = {0};
+    if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s&device_id=%s",
+                 state_str, dev_id);
+        return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
+    }
+    return false;
 }

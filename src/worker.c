@@ -132,12 +132,22 @@ static void handle_command(WorkerCommand cmd, const char *token) {
         case CMD_VOLUME_DOWN:
             spotify_set_volume(token, g_playback_state.volume_percent - 5);
             break;
-        case CMD_TOGGLE_SHUFFLE:
-            spotify_set_shuffle(token, !g_playback_state.shuffle_state);
+        case CMD_TOGGLE_SHUFFLE: {
+            bool target = !g_playback_state.shuffle_state;
+            if (spotify_set_shuffle(token, target)) {
+                lock_mutex();
+                g_playback_state.shuffle_state = target;
+                unlock_mutex();
+            }
             break;
+        }
         case CMD_CYCLE_REPEAT: {
             SpotifyRepeatMode next_mode = (g_playback_state.repeat_state + 1) % 3;
-            spotify_set_repeat(token, next_mode);
+            if (spotify_set_repeat(token, next_mode)) {
+                lock_mutex();
+                g_playback_state.repeat_state = next_mode;
+                unlock_mutex();
+            }
             break;
         }
         case CMD_FORCE_REFRESH:

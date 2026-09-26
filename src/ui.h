@@ -33,6 +33,10 @@ typedef enum {
     THEME_SPORTS_YELLOW,    /* 1983 Sports Walkman WM-F5 (Vivid Yellow/Black + Turquoise button) */
     THEME_GRAPHITE_DD,      /* 1982 Walkman WM-DD / WM-2 (Charcoal Anthracite / Chrome Platinum) */
     THEME_STEALTH_OLED,     /* Minimalist AMOLED True Black / Neon Green (0% power on OLED) */
+    THEME_WM2_RED,          /* 1981 Walkman WM-2 (Vivid Japanese Red / Matte Black + Amber button) */
+    THEME_WM_D6C_PRO,       /* 1984 Professional WM-D6C (Studio Matte Black / Dolby Gold + Studio Red) */
+    THEME_MY_FIRST_SONY,    /* 1987 My First Sony (Pop Red / Cobalt Blue + Blue Hubs & Yellow Teeth) */
+    THEME_CHAMPAGNE_GOLD,   /* 1989 10th Anniversary WM-701C (Titanium Champagne Gold / Royal Navy) */
     THEME_COUNT
 } ThemeId;
 

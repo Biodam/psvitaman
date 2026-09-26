@@ -14,7 +14,7 @@
 ## Features
 
 - **Retro Walkman Aesthetic**: Authentic cassette shell design, tape window, tape ribbon, and dual rotating cassette reels.
-- **Walkman-Inspired Themes**: 4 authentic colorways inspired by iconic Sony models (1979 TPS-L2 Blue, 1983 WM-F5 Sports Yellow, 1982 WM-DD Graphite, and 0-IRE Stealth AMOLED Black).
+- **Walkman-Inspired Themes**: 8 authentic colorways inspired by iconic Sony models (1979 TPS-L2 Blue, 1983 WM-F5 Sports Yellow, 1982 WM-DD Graphite, 1981 WM-2 Red, 1984 WM-D6C Pro, 1987 My First Sony, 1989 WM-701C 10th Anniversary Gold, and 0-IRE Stealth AMOLED Black).
 - **AMOLED Burn-In Safety**: Periodic 8-point orbital pixel shifting ($\pm 2\text{px}$) designed specifically for PS Vita 1000 OLED displays to prevent static image burn-in.
 - **Continuous Desk Playback**: Prevents the PS Vita screen from dimming or going to sleep while active.
 - **Authentic Cassette Tape Physics**: Independent spool speeds following linear tape velocity ($v = \omega \cdot r$ — small reels spin $\sim 2.6\times$ faster than full ones), smooth motor spin-up/spin-down inertia, organic belt-drive wow & flutter, track-skip fast whir bursts, tangential tape ribbon routing, and a mechanical 3-digit counter geared to reel revolutions.
@@ -78,6 +78,10 @@ Switch themes on the fly using **D-Pad Left / Right** or by tapping the red circ
 - **Sports WM-F5 (1983)**: Bold Action Yellow body with matte black accents and turquoise highlights, celebrating Sony's legendary rugged cassette player.
 - **Graphite WM-DD (1982)**: Premium dark charcoal anthracite cassette chassis with chrome and platinum trim.
 - **Stealth AMOLED**: 0-IRE true black background with neon phosphor green accents, eliminating OLED power draw on the PS Vita 1000 display.
+- **WM-2 Red (1981)**: Vivid Japanese Crimson Red body, matte black piano-key buttons, and amber gold accents inspired by the bestselling second-generation Walkman.
+- **WM-D6C Pro (1984)**: Studio anodized matte gunmetal black chassis, Dolby gold lettering, Type IV metal cassette, and studio red LED peak indicators honoring Sony's direct-drive quartz field recorder.
+- **My First Sony (1987)**: Playful pop culture classic featuring pure primary red chassis, cobalt blue transport buttons, sunflower yellow accents, and iconic sky blue spools.
+- **WM-701C 10th Anniv. Gold (1989)**: Ultra-sleek champagne titanium gold chassis, royal navy deck keys, and polished brass spools celebrating 10 years of Walkman innovation.
 
 ---
 

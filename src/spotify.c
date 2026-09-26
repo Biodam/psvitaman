@@ -352,7 +352,7 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
 
     char content_length_hdr[64] = {0};
     if (post_data && post_len > 0) {
-        snprintf(content_length_hdr, sizeof(content_length_hdr), "Content-Length: %zu\r\n", post_len);
+        snprintf(content_length_hdr, sizeof(content_length_hdr), "Content-Length: %u\r\n", (unsigned int)post_len);
     } else if (method == HTTP_REQ_POST || method == HTTP_REQ_PUT) {
         snprintf(content_length_hdr, sizeof(content_length_hdr), "Content-Length: 0\r\n");
     }
@@ -494,7 +494,7 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
         if (out_http_status) *out_http_status = status_code;
     }
 
-    LOG_INFO("HTTP %d response from %s (%zu bytes)", status_code, host, raw_size);
+    LOG_INFO("HTTP %d response from %s (%u bytes)", status_code, host, (unsigned int)raw_size);
 
     const char *body_start = hdr_end + 4;
     size_t body_len = raw_size - (body_start - raw_resp);
@@ -655,7 +655,7 @@ bool spotify_init(void) {
         return false;
     }
 
-    LOG_INFO("MbedTLS initialized with Root CA certificate bundle (%zu bytes)", read_bytes);
+    LOG_INFO("MbedTLS initialized with Root CA certificate bundle (%u bytes)", (unsigned int)read_bytes);
     s_mbedtls_ready = true;
 #endif
     return true;
@@ -743,7 +743,8 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
                       "Could not connect to Spotify auth server. Check your Wi-Fi.",
                       "Press [X] to dismiss");
         } else {
-            LOG_ERROR("Spotify token refresh failed: HTTP %d", http_status);
+            LOG_ERROR("Spotify token refresh failed: HTTP %d, body: %s",
+                      http_status, (resp.data && resp.size > 0) ? resp.data : "(none)");
             if (http_status == 400 || http_status == 401) {
                 error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
                           "Your Spotify authorization token is invalid or expired. Please re-pair your account.",

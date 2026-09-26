@@ -313,7 +313,7 @@
       tokenBox.textContent = "Refresh Token: " + refreshToken;
       tokenBox.style.display = "block";
 
-      const vitaUrl = `http://${vitaIp}:8888/save`;
+      const vitaUrl = `http://${vitaIp}:8888/save?refresh_token=${encodeURIComponent(refreshToken)}&client_id=${encodeURIComponent(clientId)}`;
       const form = document.getElementById('vitaSubmitForm');
       form.action = vitaUrl;
       document.getElementById('formRefreshToken').value = refreshToken;

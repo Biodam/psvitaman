@@ -299,10 +299,48 @@ static int http_server_thread_func(SceSize args, void *argp) {
             continue;
         }
 
-        char req_buf[4096];
+        char req_buf[8192];
         memset(req_buf, 0, sizeof(req_buf));
-        int recvd = sceNetRecv(client_sock, req_buf, sizeof(req_buf) - 1, 0);
-        if (recvd > 0) {
+        int total_recvd = 0;
+        int content_len = 0;
+        bool headers_done = false;
+
+#if defined(__psp2__) || defined(__VITA__)
+        /* Set 2-second receive timeout on client socket */
+        int opt_timeout = 2000000;
+        sceNetSetsockopt(client_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_RCVTIMEO, &opt_timeout, sizeof(opt_timeout));
+#endif
+
+        while (total_recvd < (int)(sizeof(req_buf) - 1)) {
+            int n = 0;
+#if defined(__psp2__) || defined(__VITA__)
+            n = sceNetRecv(client_sock, req_buf + total_recvd, sizeof(req_buf) - 1 - total_recvd, 0);
+#else
+            n = recv(client_sock, req_buf + total_recvd, sizeof(req_buf) - 1 - total_recvd, 0);
+#endif
+            if (n <= 0) break;
+            total_recvd += n;
+            req_buf[total_recvd] = '\0';
+
+            char *hdr_end = strstr(req_buf, "\r\n\r\n");
+            if (!headers_done && hdr_end) {
+                headers_done = true;
+                const char *cl_pos = strstr(req_buf, "Content-Length:");
+                if (!cl_pos) cl_pos = strstr(req_buf, "content-length:");
+                if (cl_pos) {
+                    content_len = atoi(cl_pos + 15);
+                }
+            }
+
+            if (headers_done) {
+                size_t body_received = total_recvd - (hdr_end + 4 - req_buf);
+                if (body_received >= (size_t)content_len) {
+                    break;
+                }
+            }
+        }
+
+        if (total_recvd > 0) {
             handle_client(client_sock, req_buf);
         }
         sceNetSocketClose(client_sock);

@@ -5,6 +5,7 @@
 #include "config.h"
 #include "ini.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 

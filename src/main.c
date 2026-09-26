@@ -119,10 +119,12 @@ int main(int argc, char *argv[]) {
             if (input.pressed_buttons & (SCE_CTRL_CROSS | SCE_CTRL_CIRCLE)) {
                 error_clear();
                 has_error = false;
-            } else if (current_error.code == APP_ERR_SPOTIFY_AUTH && (input.pressed_buttons & SCE_CTRL_SELECT)) {
+            } else if (input.pressed_buttons & SCE_CTRL_SELECT) {
+                /* Pressing SELECT from error modal immediately pauses worker and enters pairing mode */
                 error_clear();
                 has_error = false;
                 show_qr_overlay = true;
+                worker_stop();
                 if (!http_server_is_running()) {
                     http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 }
@@ -136,14 +138,17 @@ int main(int argc, char *argv[]) {
             if (!has_error && (input.pressed_buttons & SCE_CTRL_SELECT)) {
                 show_qr_overlay = !show_qr_overlay;
                 if (show_qr_overlay) {
+                    worker_stop();
                     if (!http_server_is_running()) http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 } else {
                     if (http_server_is_running()) http_server_stop();
+                    worker_start(&config);
                 }
             }
             if (show_qr_overlay && (input.pressed_buttons & SCE_CTRL_CIRCLE)) {
                 show_qr_overlay = false;
                 if (http_server_is_running()) http_server_stop();
+                worker_start(&config);
             }
 
             /* Only process playback buttons if modal overlay and error are not blocking */

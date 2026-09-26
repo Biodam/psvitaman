@@ -213,7 +213,7 @@ static void* worker_thread_func(void *argp)
                     lock_mutex();
                     g_playback_state.auth_error = true;
                     unlock_mutex();
-                    sleep_ms(3000);
+                    sleep_ms(15000);
                     continue;
                 }
                 g_syncing = false;

@@ -120,11 +120,14 @@ int main(int argc, char *argv[]) {
                 error_clear();
                 has_error = false;
             } else if (input.pressed_buttons & SCE_CTRL_SELECT) {
-                /* Pressing SELECT from error modal immediately pauses worker and enters pairing mode */
+                /* Pressing SELECT resets pairing: removes invalid config and switches cleanly to Setup Mode */
+                LOG_INFO("SELECT pressed on error: resetting config and entering Setup Mode");
                 error_clear();
                 has_error = false;
-                show_qr_overlay = true;
                 worker_stop();
+                remove("ux0:data/psvitaman/config.ini");
+                config.is_valid = false;
+                show_qr_overlay = false;
                 if (!http_server_is_running()) {
                     http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 }
@@ -134,15 +137,16 @@ int main(int argc, char *argv[]) {
 
         if (config.is_valid) {
 #if defined(__psp2__) || defined(__VITA__)
-            /* Toggle QR Code pairing overlay with SELECT */
+            /* Pressing SELECT on the deck resets pairing and enters Setup Mode */
             if (!has_error && (input.pressed_buttons & SCE_CTRL_SELECT)) {
-                show_qr_overlay = !show_qr_overlay;
-                if (show_qr_overlay) {
-                    worker_stop();
-                    if (!http_server_is_running()) http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
-                } else {
-                    if (http_server_is_running()) http_server_stop();
-                    worker_start(&config);
+                LOG_INFO("SELECT pressed on deck: resetting config and entering Setup Mode");
+                worker_stop();
+                remove("ux0:data/psvitaman/config.ini");
+                config.is_valid = false;
+                show_qr_overlay = false;
+                error_clear();
+                if (!http_server_is_running()) {
+                    http_server_start(HTTP_SERVER_DEFAULT_PORT, &config);
                 }
             }
             if (show_qr_overlay && (input.pressed_buttons & SCE_CTRL_CIRCLE)) {

@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <curl/curl.h>
 
 #include "config.h"
 #include "spotify.h"
@@ -23,6 +22,8 @@
 #include <psp2/sysmodule.h>
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
+#include <psp2/net/http.h>
+#include <psp2/libssl.h>
 #include <psp2/ctrl.h>
 #include <vita2d.h>
 
@@ -37,6 +38,9 @@ int main(int argc, char *argv[]) {
 #if defined(__psp2__) || defined(__VITA__)
     /* 1. Load System Modules */
     sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTP);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
     sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
 
     /* 2. Initialize SceNet Stack */
@@ -47,17 +51,22 @@ int main(int argc, char *argv[]) {
     sceNetInit(&net_param);
     sceNetCtlInit();
 
-    /* 3. Initialize vita2d Graphics */
+    /* 3. Initialize SceSsl & SceHttp Native Stacks */
+    sceSslInit(300 * 1024);
+    sceHttpInit(1024 * 1024);
+    sceHttpsDisableOption(SCE_HTTPS_FLAG_SERVER_VERIFY);
+
+    /* 4. Initialize vita2d Graphics */
     vita2d_init();
     vita2d_set_clear_color(RGBA8(22, 26, 34, 255));
 #endif
 
-    /* 4. Initialize Network & Diagnostics */
+    /* 5. Initialize Network & Diagnostics */
     log_init("ux0:data/psvitaman/psvitaman.log");
     error_init();
     LOG_INFO("PSVitaman initializing...");
 
-    curl_global_init(CURL_GLOBAL_ALL);
+    spotify_init();
     input_init();
     ui_init();
 
@@ -231,14 +240,19 @@ int main(int argc, char *argv[]) {
     }
 
     ui_cleanup();
-    curl_global_cleanup();
+    spotify_cleanup();
     error_cleanup();
     log_close();
 
 #if defined(__psp2__) || defined(__VITA__)
     vita2d_fini();
+    sceHttpTerm();
+    sceSslTerm();
     sceNetCtlTerm();
     sceNetTerm();
+    sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTPS);
+    sceSysmoduleUnloadModule(SCE_SYSMODULE_SSL);
+    sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTP);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
     sceKernelExitProcess(0);

@@ -1,5 +1,8 @@
 /**
  * PSVitaman - Spotify Web API Client Implementation
+ * 
+ * Uses PS Vita native SceHttp / SceSsl for 100% reliable hardware-accelerated
+ * HTTPS communication without OpenSSL ABI incompatibility or memory leaks.
  */
 
 #include "spotify.h"
@@ -7,61 +10,194 @@
 #include "cJSON.h"
 #include "logger.h"
 #include "error.h"
+#include "try_catch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <curl/curl.h>
 
-#define CACERT_PATH "app0:assets/cacert.pem"
+#if defined(__psp2__) || defined(__VITA__)
+#include <psp2/net/http.h>
+#include <psp2/net/net.h>
+#include <psp2/libssl.h>
+#else
+#include <curl/curl.h>
+#endif
+
+typedef enum {
+    HTTP_REQ_GET = 0,
+    HTTP_REQ_POST = 1,
+    HTTP_REQ_PUT = 2
+} HttpMethodType;
 
 typedef struct {
     char *data;
     size_t size;
-} MemoryBuffer;
+} HttpResponseBuffer;
+
+#if defined(__psp2__) || defined(__VITA__)
+
+static bool do_http_request(const char *url, HttpMethodType method, const char *auth_header,
+                           const char *content_type, const void *post_data, size_t post_len,
+                           HttpResponseBuffer *out_buf, int *out_http_status) {
+    if (!url) return false;
+    if (out_http_status) *out_http_status = 0;
+
+    int tmpl = sceHttpCreateTemplate("PSVitaman/1.0 (PSVita; ARM)", SCE_HTTP_VERSION_1_1, SCE_TRUE);
+    if (tmpl < 0) {
+        LOG_ERROR("sceHttpCreateTemplate failed: 0x%08x", tmpl);
+        return false;
+    }
+
+    sceHttpSetConnectTimeOut(tmpl, 8 * 1000 * 1000);
+    sceHttpSetSendTimeOut(tmpl, 8 * 1000 * 1000);
+    sceHttpSetRecvTimeOut(tmpl, 8 * 1000 * 1000);
+    sceHttpSetResolveTimeOut(tmpl, 8 * 1000 * 1000);
+
+    int conn = sceHttpCreateConnectionWithURL(tmpl, url, SCE_FALSE);
+    if (conn < 0) {
+        LOG_ERROR("sceHttpCreateConnectionWithURL failed for %s: 0x%08x", url, conn);
+        sceHttpDeleteTemplate(tmpl);
+        return false;
+    }
+
+    int sce_method = SCE_HTTP_METHOD_GET;
+    if (method == HTTP_REQ_POST) sce_method = SCE_HTTP_METHOD_POST;
+    else if (method == HTTP_REQ_PUT) sce_method = SCE_HTTP_METHOD_PUT;
+
+    int req = sceHttpCreateRequestWithURL(conn, sce_method, url, post_len);
+    if (req < 0) {
+        LOG_ERROR("sceHttpCreateRequestWithURL failed for %s: 0x%08x", url, req);
+        sceHttpDeleteConnection(conn);
+        sceHttpDeleteTemplate(tmpl);
+        return false;
+    }
+
+    if (auth_header && strlen(auth_header) > 0) {
+        sceHttpAddRequestHeader(req, "Authorization", auth_header, SCE_HTTP_HEADER_ADD);
+    }
+    if (content_type && strlen(content_type) > 0) {
+        sceHttpAddRequestHeader(req, "Content-Type", content_type, SCE_HTTP_HEADER_ADD);
+    }
+
+    int send_res = sceHttpSendRequest(req, post_data, (unsigned int)post_len);
+    if (send_res < 0) {
+        LOG_ERROR("sceHttpSendRequest failed for URL %s: 0x%08x", url, send_res);
+        sceHttpDeleteRequest(req);
+        sceHttpDeleteConnection(conn);
+        sceHttpDeleteTemplate(tmpl);
+        return false;
+    }
+
+    int status = 0;
+    sceHttpGetStatusCode(req, &status);
+    if (out_http_status) *out_http_status = status;
+
+    if (out_buf) {
+        out_buf->data = malloc(1);
+        out_buf->size = 0;
+        if (out_buf->data) out_buf->data[0] = '\0';
+
+        unsigned char chunk[2048];
+        int bytes_read = 0;
+        while ((bytes_read = sceHttpReadData(req, chunk, sizeof(chunk) - 1)) > 0) {
+            char *new_ptr = realloc(out_buf->data, out_buf->size + bytes_read + 1);
+            if (!new_ptr) {
+                LOG_ERROR("Out of memory reading HTTP response");
+                break;
+            }
+            out_buf->data = new_ptr;
+            memcpy(out_buf->data + out_buf->size, chunk, bytes_read);
+            out_buf->size += bytes_read;
+            out_buf->data[out_buf->size] = '\0';
+        }
+    }
+
+    sceHttpDeleteRequest(req);
+    sceHttpDeleteConnection(conn);
+    sceHttpDeleteTemplate(tmpl);
+    return true;
+}
+
+#else
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t realsize = size * nmemb;
-    MemoryBuffer *mem = (MemoryBuffer *)userp;
-
+    HttpResponseBuffer *mem = (HttpResponseBuffer *)userp;
     char *ptr = realloc(mem->data, mem->size + realsize + 1);
-    if (!ptr) {
-        return 0; /* out of memory */
-    }
-
+    if (!ptr) return 0;
     mem->data = ptr;
     memcpy(&(mem->data[mem->size]), contents, realsize);
     mem->size += realsize;
     mem->data[mem->size] = 0;
-
     return realsize;
 }
 
-static void configure_curl_ssl(CURL *curl) {
-    /*
-     * On PS Vita, VitaSDK's precompiled libcurl was built against OpenSSL 1.0 headers
-     * while the toolchain links OpenSSL 1.1. When CURLOPT_SSL_VERIFYPEER is enabled,
-     * Curl_ssl_setup_x509_store attempts to cache and traverse the X509_STORE using OpenSSL 1.0
-     * struct offsets (store->objs), reading garbage and calling sk_pop_free(), which corrupts
-     * the dlmalloc heap bins and leads to Data Abort crashes (C2-12828-1).
-     *
-     * Disabling peer verification bypasses Curl_ssl_setup_x509_store entirely, preserving
-     * full TLS transport encryption while preventing the OpenSSL 1.0/1.1 ABI crash.
-     */
+static bool do_http_request(const char *url, HttpMethodType method, const char *auth_header,
+                           const char *content_type, const void *post_data, size_t post_len,
+                           HttpResponseBuffer *out_buf, int *out_http_status) {
+    if (!url) return false;
+    CURL *curl = curl_easy_init();
+    if (!curl) return false;
+
+    struct curl_slist *headers = NULL;
+    if (auth_header) {
+        char auth_hdr[600];
+        snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: %s", auth_header);
+        headers = curl_slist_append(headers, auth_hdr);
+    }
+    if (content_type) {
+        char ct_hdr[128];
+        snprintf(ct_hdr, sizeof(ct_hdr), "Content-Type: %s", content_type);
+        headers = curl_slist_append(headers, ct_hdr);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 6L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "PSVitaman/1.0 (PSVita; ARM)");
-    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 8L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+
+    if (method == HTTP_REQ_POST) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        if (post_data) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (const char *)post_data);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)post_len);
+        }
+    } else if (method == HTTP_REQ_PUT) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+        if (post_data) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (const char *)post_data);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)post_len);
+        } else {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+        }
+    }
+
+    if (out_buf) {
+        out_buf->data = malloc(1);
+        out_buf->size = 0;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)out_buf);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (out_http_status) *out_http_status = (int)http_code;
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return (res == CURLE_OK);
 }
 
+#endif
+
 bool spotify_init(void) {
-    /* curl_global_init is called in main.c, but verify here */
     return true;
 }
 
 void spotify_cleanup(void) {
-    /* Cleanup any global state if needed */
 }
 
 bool spotify_refresh_token(const char *client_id, const char *client_secret,
@@ -77,62 +213,44 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
         return false;
     }
 
-    CURL *curl = curl_easy_init();
-    if (!curl) {
-        LOG_ERROR("spotify_refresh_token: curl_easy_init returned NULL");
-        return false;
-    }
-    LOG_INFO("spotify_refresh_token: curl handle created");
+    char escaped_token[512] = {0};
+    utils_url_encode(refresh_token, escaped_token, sizeof(escaped_token));
 
-    MemoryBuffer chunk = {0};
-    chunk.data = malloc(1);
-    chunk.size = 0;
-
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
-
-    char *escaped_token = curl_easy_escape(curl, refresh_token, 0);
     char post_fields[1024];
+    char auth_header[600] = {0};
 
-    /* If client_secret is provided, use Basic Auth header; otherwise PKCE mode */
     if (client_secret && strlen(client_secret) > 0 && strstr(client_secret, "YOUR_") == NULL) {
         LOG_INFO("spotify_refresh_token: using Basic Auth mode");
         char creds[300];
         snprintf(creds, sizeof(creds), "%s:%s", client_id, client_secret);
         char b64_creds[512];
         utils_base64_encode((const unsigned char *)creds, strlen(creds), b64_creds, sizeof(b64_creds));
-
-        char auth_header[600];
-        snprintf(auth_header, sizeof(auth_header), "Authorization: Basic %s", b64_creds);
-        headers = curl_slist_append(headers, auth_header);
-
+        snprintf(auth_header, sizeof(auth_header), "Basic %s", b64_creds);
         snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s", escaped_token);
     } else {
         LOG_INFO("spotify_refresh_token: using PKCE direct mode");
-        char *escaped_id = curl_easy_escape(curl, client_id, 0);
+        char escaped_id[128] = {0};
+        utils_url_encode(client_id, escaped_id, sizeof(escaped_id));
         snprintf(post_fields, sizeof(post_fields), "grant_type=refresh_token&refresh_token=%s&client_id=%s",
                  escaped_token, escaped_id);
-        curl_free(escaped_id);
     }
-    curl_free(escaped_token);
 
-    curl_easy_setopt(curl, CURLOPT_URL, "https://accounts.spotify.com/api/token");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_fields);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-    configure_curl_ssl(curl);
+    LOG_INFO("spotify_refresh_token: sending POST to accounts.spotify.com/api/token...");
+    HttpResponseBuffer resp = {0};
+    int http_status = 0;
+    bool ok = do_http_request("https://accounts.spotify.com/api/token",
+                              HTTP_REQ_POST,
+                              auth_header[0] ? auth_header : NULL,
+                              "application/x-www-form-urlencoded",
+                              post_fields, strlen(post_fields),
+                              &resp, &http_status);
 
-    LOG_INFO("spotify_refresh_token: calling curl_easy_perform to accounts.spotify.com...");
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    LOG_INFO("spotify_refresh_token: curl_easy_perform finished: res=%d (%s), http_code=%ld",
-             res, curl_easy_strerror(res), http_code);
+    LOG_INFO("spotify_refresh_token: request finished: success=%s, http_code=%d",
+             ok ? "true" : "false", http_status);
 
     bool success = false;
-    if (res == CURLE_OK && http_code == 200 && chunk.data) {
-        cJSON *json = cJSON_Parse(chunk.data);
+    if (ok && http_status == 200 && resp.data) {
+        cJSON *json = cJSON_Parse(resp.data);
         if (json) {
             cJSON *tok = cJSON_GetObjectItem(json, "access_token");
             cJSON *exp = cJSON_GetObjectItem(json, "expires_in");
@@ -147,14 +265,14 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
             cJSON_Delete(json);
         }
     } else {
-        if (res != CURLE_OK) {
-            LOG_ERROR("Spotify token refresh curl error: %s", curl_easy_strerror(res));
+        if (!ok) {
+            LOG_ERROR("Spotify token refresh network error");
             error_set(APP_ERR_SPOTIFY_TIMEOUT, "Spotify Network Timeout",
                       "Could not connect to Spotify auth server. Check your Wi-Fi.",
                       "Press [X] to dismiss");
         } else {
-            LOG_ERROR("Spotify token refresh failed: HTTP %ld", http_code);
-            if (http_code == 400 || http_code == 401) {
+            LOG_ERROR("Spotify token refresh failed: HTTP %d", http_status);
+            if (http_status == 400 || http_status == 401) {
                 error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
                           "Your Spotify authorization token is invalid or expired. Please re-pair your account.",
                           "Press [SELECT] to pair phone | [X] Dismiss");
@@ -162,10 +280,7 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
         }
     }
 
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-    if (chunk.data) free(chunk.data);
-
+    if (resp.data) free(resp.data);
     return success;
 }
 
@@ -221,58 +336,33 @@ static bool spotify_fetch_json(const char *access_token, const char *url, cJSON 
     if (!access_token || !url || !out_json) return false;
     *out_json = NULL;
 
-    CURL *curl = curl_easy_init();
-    if (!curl) return false;
-
-    MemoryBuffer chunk = {0};
-    chunk.data = malloc(1);
-    chunk.size = 0;
-
     char auth_header[600];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", access_token);
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", access_token);
 
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, auth_header);
+    HttpResponseBuffer resp = {0};
+    int http_status = 0;
+    bool ok = do_http_request(url, HTTP_REQ_GET, auth_header, NULL, NULL, 0, &resp, &http_status);
+    if (out_http_code) *out_http_code = (long)http_status;
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-    configure_curl_ssl(curl);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-    if (out_http_code) *out_http_code = http_code;
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res == CURLE_OK) {
-        if (http_code == 200 && chunk.data && chunk.size > 0) {
-            *out_json = cJSON_Parse(chunk.data);
-            free(chunk.data);
+    if (ok) {
+        if (http_status == 200 && resp.data && resp.size > 0) {
+            *out_json = cJSON_Parse(resp.data);
+            free(resp.data);
             return (*out_json != NULL);
         }
-        if (chunk.data) free(chunk.data);
-        return (http_code >= 200 && http_code < 300);
+        if (resp.data) free(resp.data);
+        return (http_status >= 200 && http_status < 300);
     }
 
-    if (chunk.data) free(chunk.data);
+    if (resp.data) free(resp.data);
     return false;
 }
 
 bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state) {
     if (!access_token || !state) return false;
 
-    /*
-     * Query /v1/me/player to get active player status (device, volume, shuffle, repeat, track).
-     * If /v1/me/player returns 204 No Content (very common when Spotify mobile is idle/paused),
-     * fallback to /v1/me/player/currently-playing which often returns the last playing track item!
-     */
     cJSON *json = NULL;
     long http_code = 0;
-    bool success = false;
 
     bool query_res = spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player", &json, &http_code);
 
@@ -324,10 +414,6 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
     }
 
     if (http_code == 204) {
-        /*
-         * Active playback is paused/idle.
-         * Try /v1/me/player/currently-playing to fetch track information.
-         */
         state->network_error = false;
         state->is_playing = false;
         state->is_active = false;
@@ -347,7 +433,6 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
             return true;
         }
 
-        /* If currently-playing is also 204, get registered device list to at least show device name */
         cJSON *dev_json = NULL;
         long dev_code = 0;
         if (spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player/devices", &dev_json, &dev_code) && dev_json) {
@@ -400,97 +485,53 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
     return false;
 }
 
-static bool spotify_send_rest_cmd(const char *access_token, const char *url, const char *method) {
+static bool spotify_send_rest_cmd(const char *access_token, const char *url, HttpMethodType method) {
     if (!access_token || !url) return false;
 
-    CURL *curl = curl_easy_init();
-    if (!curl) return false;
-
     char auth_header[600];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", access_token);
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", access_token);
 
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, auth_header);
-    headers = curl_slist_append(headers, "Content-Length: 0");
+    int http_status = 0;
+    bool ok = do_http_request(url, method, auth_header, NULL, "", 0, NULL, &http_status);
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    configure_curl_ssl(curl);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res == CURLE_OK) {
-        if (http_code >= 200 && http_code < 300) {
+    if (ok) {
+        if (http_status >= 200 && http_status < 300) {
             return true;
-        } else if (http_code == 404) {
-            LOG_WARN("Spotify command (%s %s) failed: HTTP 404 No Active Device", method, url);
-        } else if (http_code == 403) {
-            LOG_ERROR("Spotify command (%s %s) failed: HTTP 403 Premium Required", method, url);
+        } else if (http_status == 404) {
+            LOG_WARN("Spotify command (%s) failed: HTTP 404 No Active Device", url);
+        } else if (http_status == 403) {
+            LOG_ERROR("Spotify command (%s) failed: HTTP 403 Premium Required", url);
             error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
                       "Spotify Web API restricts player control to Premium subscribers.",
                       "Press [X] to dismiss");
         } else {
-            LOG_WARN("Spotify command (%s %s) returned HTTP %ld", method, url, http_code);
+            LOG_WARN("Spotify command (%s) returned HTTP %d", url, http_status);
         }
     } else {
-        LOG_ERROR("Spotify command (%s %s) curl error: %s", method, url, curl_easy_strerror(res));
+        LOG_ERROR("Spotify command (%s) network error", url);
     }
 
     return false;
 }
 
-/*
- * Send a JSON request payload to Spotify Web API.
- */
-static bool spotify_send_json_cmd(const char *access_token, const char *url, const char *method, const char *json_body) {
+static bool spotify_send_json_cmd(const char *access_token, const char *url, HttpMethodType method, const char *json_body) {
     if (!access_token || !url) return false;
 
-    CURL *curl = curl_easy_init();
-    if (!curl) return false;
-
     char auth_header[600];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", access_token);
+    snprintf(auth_header, sizeof(auth_header), "Bearer %s", access_token);
 
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, auth_header);
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    int http_status = 0;
+    size_t body_len = json_body ? strlen(json_body) : 0;
+    bool ok = do_http_request(url, method, auth_header, "application/json", json_body, body_len, NULL, &http_status);
 
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-    if (json_body) {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body);
-    } else {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
-    }
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    configure_curl_ssl(curl);
-
-    CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res == CURLE_OK && http_code >= 200 && http_code < 300) {
+    if (ok && http_status >= 200 && http_status < 300) {
         return true;
     }
 
-    LOG_WARN("spotify_send_json_cmd (%s %s) returned HTTP %ld", method, url, http_code);
+    LOG_WARN("spotify_send_json_cmd (%s) returned HTTP %d", url, http_status);
     return false;
 }
 
-/*
- * Discover user's registered Spotify devices (Smartphone, Computer, Speaker, etc.).
- * Returns true if a usable device is found and stores device_id in out_device_id.
- */
 static bool spotify_get_best_device(const char *access_token, char *out_device_id, size_t max_len, char *out_name, size_t name_max) {
     if (!access_token || !out_device_id) return false;
     out_device_id[0] = '\0';
@@ -513,12 +554,6 @@ static bool spotify_get_best_device(const char *access_token, char *out_device_i
     int dev_count = cJSON_GetArraySize(devices);
     int best_index = -1;
 
-    /*
-     * Priority:
-     * 1. Already active device
-     * 2. Smartphone or Computer
-     * 3. First device in list
-     */
     for (int i = 0; i < dev_count; i++) {
         cJSON *dev = cJSON_GetArrayItem(devices, i);
         if (!dev) continue;
@@ -562,9 +597,6 @@ static bool spotify_get_best_device(const char *access_token, char *out_device_i
     return false;
 }
 
-/*
- * Transfer playback to a device and optionally start playback.
- */
 static bool spotify_transfer_playback(const char *access_token, const char *device_id, bool play) {
     if (!access_token || !device_id || strlen(device_id) == 0) return false;
 
@@ -573,22 +605,17 @@ static bool spotify_transfer_playback(const char *access_token, const char *devi
              device_id, play ? "true" : "false");
 
     LOG_INFO("spotify_transfer_playback: waking up device %s (play=%s)", device_id, play ? "true" : "false");
-    return spotify_send_json_cmd(access_token, "https://api.spotify.com/v1/me/player", "PUT", payload);
+    return spotify_send_json_cmd(access_token, "https://api.spotify.com/v1/me/player", HTTP_REQ_PUT, payload);
 }
 
-/*
- * Wake up best device and resume playback.
- */
 bool spotify_resume_playback(const char *access_token) {
     if (!access_token) return false;
 
-    /* 1. Try regular play command first */
-    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/play", "PUT")) {
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/play", HTTP_REQ_PUT)) {
         LOG_INFO("spotify_resume_playback: direct play command succeeded");
         return true;
     }
 
-    /* 2. Direct play failed (HTTP 404 No Active Device). Find best device. */
     LOG_INFO("Direct play returned 404. Finding registered Spotify devices...");
     char device_id[128] = {0};
     char device_name[128] = {0};
@@ -600,16 +627,14 @@ bool spotify_resume_playback(const char *access_token) {
             return true;
         }
 
-        /* Fallback: transfer then play */
         char play_url[256];
         snprintf(play_url, sizeof(play_url), "https://api.spotify.com/v1/me/player/play?device_id=%s", device_id);
-        if (spotify_send_rest_cmd(access_token, play_url, "PUT")) {
+        if (spotify_send_rest_cmd(access_token, play_url, HTTP_REQ_PUT)) {
             LOG_INFO("Resumed playback with explicit device_id query on '%s'!", device_name);
             return true;
         }
     }
 
-    /* No active device found */
     LOG_WARN("Could not resume playback: No active or discoverable Spotify device");
     error_set(APP_ERR_SPOTIFY_NO_DEVICE, "No Active Spotify Device",
               "Spotify could not find an active player. Open Spotify on phone, PC, or speaker.",
@@ -622,33 +647,31 @@ bool spotify_play(const char *access_token) {
 }
 
 bool spotify_pause(const char *access_token) {
-    return spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/pause", "PUT");
+    return spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/pause", HTTP_REQ_PUT);
 }
 
 bool spotify_next(const char *access_token) {
-    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/next", "POST")) {
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/next", HTTP_REQ_POST)) {
         return true;
     }
-    /* If 404, wake device and try next */
     char dev_id[128] = {0};
     if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
         char url[256];
         snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/next?device_id=%s", dev_id);
-        return spotify_send_rest_cmd(access_token, url, "POST");
+        return spotify_send_rest_cmd(access_token, url, HTTP_REQ_POST);
     }
     return false;
 }
 
 bool spotify_previous(const char *access_token) {
-    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/previous", "POST")) {
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/previous", HTTP_REQ_POST)) {
         return true;
     }
-    /* If 404, wake device and try previous */
     char dev_id[128] = {0};
     if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
         char url[256];
         snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/previous?device_id=%s", dev_id);
-        return spotify_send_rest_cmd(access_token, url, "POST");
+        return spotify_send_rest_cmd(access_token, url, HTTP_REQ_POST);
     }
     return false;
 }
@@ -658,13 +681,13 @@ bool spotify_set_volume(const char *access_token, int volume_percent) {
     if (volume_percent > 100) volume_percent = 100;
     char url[128];
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/volume?volume_percent=%d", volume_percent);
-    return spotify_send_rest_cmd(access_token, url, "PUT");
+    return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
 }
 
 bool spotify_set_shuffle(const char *access_token, bool state) {
     char url[128];
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s", state ? "true" : "false");
-    return spotify_send_rest_cmd(access_token, url, "PUT");
+    return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
 }
 
 bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
@@ -674,6 +697,5 @@ bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
 
     char url[128];
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s", state_str);
-    return spotify_send_rest_cmd(access_token, url, "PUT");
+    return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
 }
-

@@ -92,3 +92,28 @@ void utils_safe_strncpy(char *dest, const char *src, size_t max_len) {
     }
     dest[j] = '\0';
 }
+
+void utils_url_encode(const char *src, char *dest, size_t max_len) {
+    if (!dest || max_len == 0) return;
+    if (!src) {
+        dest[0] = '\0';
+        return;
+    }
+
+    static const char hex[] = "0123456789ABCDEF";
+    size_t j = 0;
+    for (size_t i = 0; src[i] != '\0' && j + 1 < max_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            dest[j++] = (char)c;
+        } else {
+            if (j + 4 > max_len) break;
+            dest[j++] = '%';
+            dest[j++] = hex[(c >> 4) & 0x0F];
+            dest[j++] = hex[c & 0x0F];
+        }
+    }
+    dest[j] = '\0';
+}
+

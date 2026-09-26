@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "logger.h"
 #include "error.h"
+#include "try_catch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,107 +163,76 @@ static void* worker_thread_func(void *argp)
     LOG_INFO("Background worker thread started");
 
     while (g_running) {
-        uint64_t now = get_time_ms();
+        ExceptionFrame frame;
+        TRY(frame) {
+            uint64_t now = get_time_ms();
 
 #if defined(__psp2__) || defined(__VITA__)
-        /* Check Wi-Fi state */
-        int net_state = 0;
-        int ctl_res = sceNetCtlInetGetState(&net_state);
-        LOG_INFO("Worker Wi-Fi status check: result=%d, state=%d", ctl_res, net_state);
-        if (ctl_res >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
-            error_set(APP_ERR_WIFI_DISCONNECTED, "Wi-Fi Disconnected",
-                      "PS Vita is not connected to a Wi-Fi network. Please check Vita Settings.",
-                      "Press [X] to dismiss");
-            sleep_ms(2000);
-            continue;
-        }
-#endif
-
-        /* Check if access token needs initial fetch or refresh */
-        if (!g_authenticated || now >= g_token_expiry_tick) {
-            g_syncing = true;
-            char new_token[512] = {0};
-            int expires_in = 3600;
-
-            LOG_INFO("Worker: calling spotify_refresh_token (client_id='%.8s...', token_len=%u)",
-                     g_config.client_id, (unsigned int)strlen(g_config.refresh_token));
-            if (spotify_refresh_token(g_config.client_id, g_config.client_secret,
-                                     g_config.refresh_token, new_token,
-                                     sizeof(new_token), &expires_in)) {
-                lock_mutex();
-                utils_safe_strncpy(g_access_token, new_token, sizeof(g_access_token));
-                /* Refresh 5 minutes before actual expiration */
-                g_token_expiry_tick = now + ((expires_in > 300 ? expires_in - 300 : expires_in) * 1000);
-                g_authenticated = true;
-                unlock_mutex();
-
-                if (error_is_active()) {
-                    AppError err;
-                    error_get(&err);
-                    if (err.code == APP_ERR_SPOTIFY_AUTH || err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_WIFI_DISCONNECTED) {
-                        error_clear();
-                    }
-                }
-
-                /* Immediately poll playback state right after authentication */
-                last_poll_tick = 0;
-            } else {
-                lock_mutex();
-                g_playback_state.auth_error = true;
-                unlock_mutex();
-                sleep_ms(3000);
+            /* Check Wi-Fi state */
+            int net_state = 0;
+            int ctl_res = sceNetCtlInetGetState(&net_state);
+            LOG_INFO("Worker Wi-Fi status check: result=%d, state=%d", ctl_res, net_state);
+            if (ctl_res >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
+                error_set(APP_ERR_WIFI_DISCONNECTED, "Wi-Fi Disconnected",
+                          "PS Vita is not connected to a Wi-Fi network. Please check Vita Settings.",
+                          "Press [X] to dismiss");
+                sleep_ms(2000);
                 continue;
             }
-            g_syncing = false;
-        }
+#endif
 
-        /* Check for pending UI commands */
-        WorkerCommand cmd;
-        if (pop_command(&cmd)) {
-            g_syncing = true;
-            char token_copy[512];
-            lock_mutex();
-            strncpy(token_copy, g_access_token, sizeof(token_copy));
-            unlock_mutex();
+            /* Check if access token needs initial fetch or refresh */
+            if (!g_authenticated || now >= g_token_expiry_tick) {
+                g_syncing = true;
+                char new_token[512] = {0};
+                int expires_in = 3600;
 
-            LOG_INFO("Processing transport command: %d", (int)cmd);
-            handle_command(cmd, token_copy);
+                LOG_INFO("Worker: calling spotify_refresh_token (client_id='%.8s...', token_len=%u)",
+                         g_config.client_id, (unsigned int)strlen(g_config.refresh_token));
+                if (spotify_refresh_token(g_config.client_id, g_config.client_secret,
+                                         g_config.refresh_token, new_token,
+                                         sizeof(new_token), &expires_in)) {
+                    lock_mutex();
+                    utils_safe_strncpy(g_access_token, new_token, sizeof(g_access_token));
+                    /* Refresh 5 minutes before actual expiration */
+                    g_token_expiry_tick = now + ((expires_in > 300 ? expires_in - 300 : expires_in) * 1000);
+                    g_authenticated = true;
+                    unlock_mutex();
 
-            /* Delay 250ms to allow Spotify Web API target to apply command, then poll immediately */
-            sleep_ms(250);
-            SpotifyPlaybackState new_state;
-            lock_mutex();
-            new_state = g_playback_state;
-            unlock_mutex();
+                    if (error_is_active()) {
+                        AppError err;
+                        error_get(&err);
+                        if (err.code == APP_ERR_SPOTIFY_AUTH || err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_WIFI_DISCONNECTED) {
+                            error_clear();
+                        }
+                    }
 
-            if (spotify_get_playback(token_copy, &new_state)) {
+                    /* Immediately poll playback state right after authentication */
+                    last_poll_tick = 0;
+                } else {
+                    lock_mutex();
+                    g_playback_state.auth_error = true;
+                    unlock_mutex();
+                    sleep_ms(3000);
+                    continue;
+                }
+                g_syncing = false;
+            }
+
+            /* Check for pending UI commands */
+            WorkerCommand cmd;
+            if (pop_command(&cmd)) {
+                g_syncing = true;
+                char token_copy[512];
                 lock_mutex();
-                g_playback_state = new_state;
-                g_state_updated_tick = get_time_ms();
+                strncpy(token_copy, g_access_token, sizeof(token_copy));
                 unlock_mutex();
 
-                if (error_is_active()) {
-                    AppError err;
-                    error_get(&err);
-                    if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED || err.code == APP_ERR_SPOTIFY_NO_DEVICE) {
-                        error_clear();
-                    }
-                }
-            }
-            last_poll_tick = get_time_ms();
-            g_syncing = false;
-            continue;
-        }
+                LOG_INFO("Processing transport command: %d", (int)cmd);
+                handle_command(cmd, token_copy);
 
-        /* Regular Polling Loop (every 1.5 seconds) */
-        if (now - last_poll_tick >= POLL_INTERVAL_MS) {
-            char token_copy[512];
-            lock_mutex();
-            strncpy(token_copy, g_access_token, sizeof(token_copy));
-            unlock_mutex();
-
-            if (strlen(token_copy) > 0) {
-                g_syncing = true;
+                /* Delay 250ms to allow Spotify Web API target to apply command, then poll immediately */
+                sleep_ms(250);
                 SpotifyPlaybackState new_state;
                 lock_mutex();
                 new_state = g_playback_state;
@@ -274,7 +244,6 @@ static void* worker_thread_func(void *argp)
                     g_state_updated_tick = get_time_ms();
                     unlock_mutex();
 
-                    /* Clear transient errors if poll succeeded */
                     if (error_is_active()) {
                         AppError err;
                         error_get(&err);
@@ -282,22 +251,64 @@ static void* worker_thread_func(void *argp)
                             error_clear();
                         }
                     }
-
-                    /* Log track changes */
-                    if (strcmp(new_state.track_name, s_logged_track) != 0 && strlen(new_state.track_name) > 0) {
-                        utils_safe_strncpy(s_logged_track, new_state.track_name, sizeof(s_logged_track));
-                        LOG_INFO("Now playing: \"%s\" by %s [album: %s, device: %s, %s]",
-                                 new_state.track_name, new_state.artist_name, new_state.album_name,
-                                 new_state.device_name, new_state.is_playing ? "playing" : "paused");
-                    }
                 }
+                last_poll_tick = get_time_ms();
                 g_syncing = false;
+                continue;
             }
-            last_poll_tick = get_time_ms();
-        }
 
-        /* Sleep a bit before checking command queue again */
-        sleep_ms(30);
+            /* Regular Polling Loop (every 1.5 seconds) */
+            if (now - last_poll_tick >= POLL_INTERVAL_MS) {
+                char token_copy[512];
+                lock_mutex();
+                strncpy(token_copy, g_access_token, sizeof(token_copy));
+                unlock_mutex();
+
+                if (strlen(token_copy) > 0) {
+                    g_syncing = true;
+                    SpotifyPlaybackState new_state;
+                    lock_mutex();
+                    new_state = g_playback_state;
+                    unlock_mutex();
+
+                    if (spotify_get_playback(token_copy, &new_state)) {
+                        lock_mutex();
+                        g_playback_state = new_state;
+                        g_state_updated_tick = get_time_ms();
+                        unlock_mutex();
+
+                        /* Clear transient errors if poll succeeded */
+                        if (error_is_active()) {
+                            AppError err;
+                            error_get(&err);
+                            if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED || err.code == APP_ERR_SPOTIFY_NO_DEVICE) {
+                                error_clear();
+                            }
+                        }
+
+                        /* Log track changes */
+                        if (strcmp(new_state.track_name, s_logged_track) != 0 && strlen(new_state.track_name) > 0) {
+                            utils_safe_strncpy(s_logged_track, new_state.track_name, sizeof(s_logged_track));
+                            LOG_INFO("Now playing: \"%s\" by %s [album: %s, device: %s, %s]",
+                                     new_state.track_name, new_state.artist_name, new_state.album_name,
+                                     new_state.device_name, new_state.is_playing ? "playing" : "paused");
+                        }
+                    }
+                    g_syncing = false;
+                }
+                last_poll_tick = get_time_ms();
+            }
+
+            /* Sleep a bit before checking command queue again */
+            sleep_ms(30);
+        } CATCH(frame) {
+            LOG_ERROR("Caught exception in worker thread: %s (code 0x%04x) at %s:%d",
+                      frame.message, (unsigned int)frame.code, frame.file, frame.line);
+            g_syncing = false;
+            error_set(APP_ERR_GENERIC_EXCEPTION, "Worker Exception",
+                      frame.message, "Press [X] to dismiss");
+            sleep_ms(2000);
+        }
     }
 
     LOG_INFO("Worker thread loop terminated");

@@ -21,6 +21,9 @@ void utils_format_time_ms(int ms, char *output, size_t max_out);
 /* Safe string copy with guaranteed null-termination */
 void utils_safe_strncpy(char *dest, const char *src, size_t max_len);
 
+/* Standard RFC 3986 URL encoder */
+void utils_url_encode(const char *src, char *dest, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

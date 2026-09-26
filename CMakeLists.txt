@@ -90,7 +90,6 @@ set(SOURCES
   src/ui.c
   src/http_server.c
   src/qrcodegen.c
-  src/compat_openssl.c
   src/logger.c
   src/error.c
 )
@@ -99,10 +98,6 @@ add_executable(psvitaman ${SOURCES})
 
 target_link_libraries(psvitaman
   vita2d
-  curl
-  ssl
-  crypto
-  mbedtls
   png
   jpeg
   z
@@ -117,6 +112,8 @@ target_link_libraries(psvitaman
   SceSysmodule_stub
   SceNet_stub
   SceNetCtl_stub
+  SceHttp_stub
+  SceSsl_stub
   ScePgf_stub
   SceCommonDialog_stub
   ScePower_stub

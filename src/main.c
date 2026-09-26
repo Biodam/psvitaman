@@ -16,6 +16,7 @@
 #include "http_server.h"
 #include "logger.h"
 #include "error.h"
+#include "sound.h"
 
 #ifndef GIT_COMMIT_HASH
 #define GIT_COMMIT_HASH "dev"
@@ -65,6 +66,7 @@ int main(int argc, char *argv[]) {
     spotify_init();
     input_init();
     ui_init();
+    sound_init();
 
     /* 5. Check Network & Load Configuration */
     char local_ip[32] = {0};
@@ -189,27 +191,35 @@ int main(int argc, char *argv[]) {
             if (!show_qr_overlay && !has_error) {
                 if (input.pressed_buttons & SCE_CTRL_CROSS) {
                     worker_enqueue_command(CMD_TOGGLE_PLAY_PAUSE);
+                    sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_RTRIGGER) {
                     worker_enqueue_command(CMD_SKIP_NEXT);
+                    sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_LTRIGGER) {
                     worker_enqueue_command(CMD_SKIP_PREV);
+                    sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_SQUARE) {
                     worker_enqueue_command(CMD_TOGGLE_SHUFFLE);
+                    sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_TRIANGLE) {
                     worker_enqueue_command(CMD_CYCLE_REPEAT);
+                    sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_UP) {
                     worker_enqueue_command(CMD_VOLUME_UP);
+                    sound_play(SOUND_CLICK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_DOWN) {
                     worker_enqueue_command(CMD_VOLUME_DOWN);
+                    sound_play(SOUND_CLICK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_START) {
                     worker_enqueue_command(CMD_FORCE_REFRESH);
+                    sound_play(SOUND_CLICK);
                 }
             }
 #endif
@@ -222,11 +232,13 @@ int main(int argc, char *argv[]) {
                 remove("ux0:data/psvitaman/config.ini");
                 memset(&config, 0, sizeof(config));
                 config.is_valid = false;
+                sound_play(SOUND_CLACK);
                 http_server_clear_auth_received();
             }
 
             /* If in Setup Mode, allow pressing START to reload config */
             if (input.pressed_buttons & SCE_CTRL_START) {
+                sound_play(SOUND_CLICK);
                 if (config_load(&config) && config.is_valid) {
                     http_server_stop();
                     worker_start(&config);
@@ -241,6 +253,7 @@ int main(int argc, char *argv[]) {
             if (input.pressed_buttons & SCE_CTRL_RIGHT) {
                 ui_cycle_theme();
                 config.theme = ui_get_theme();
+                sound_play(SOUND_CLICK);
                 if (config.is_valid) {
                     config_save(&config);
                 }
@@ -248,6 +261,7 @@ int main(int argc, char *argv[]) {
             } else if (input.pressed_buttons & SCE_CTRL_LEFT) {
                 ui_cycle_theme_prev();
                 config.theme = ui_get_theme();
+                sound_play(SOUND_CLICK);
                 if (config.is_valid) {
                     config_save(&config);
                 }
@@ -282,6 +296,7 @@ int main(int argc, char *argv[]) {
         worker_stop();
     }
 
+    sound_cleanup();
     ui_cleanup();
     spotify_cleanup();
     error_cleanup();

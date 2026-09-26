@@ -21,6 +21,7 @@
 - **On-Screen QR Code Pairing**: Real-time high-contrast QR code generated directly on the PS Vita screen. Point your phone camera at the screen to immediately open the Spotify authorization page or re-pair devices.
 - **Physical & Touch Controls**: 6 mechanical transport buttons positioned across the bottom of the screen with vector iconography and tactile visual feedback.
 - **Live HUD Display**: Track title marquee scrolling, Artist & Album names, millisecond-accurate time counter (`02:14 / 04:30`), volume percentage, and active Spotify device name.
+- **Mechanical Sound Effects**: Procedural cassette transport lever "clacks" on playback commands and crisp tactile "clicks" on volume and theme toggles via native `SceAudioOut` with zero external audio assets.
 - **Embedded MbedTLS Network Engine**: Full TLS 1.2/1.3 communication with Spotify Web API using built-in MbedTLS 3.6.5. No external SSL modules or `iTLS-Enso` required!
 
 ---

@@ -108,6 +108,7 @@ set(SOURCES
   src/qrcodegen.c
   src/logger.c
   src/error.c
+  src/sound.c
 )
 
 add_executable(psvitaman ${SOURCES})
@@ -134,6 +135,7 @@ target_link_libraries(psvitaman
   ScePgf_stub
   SceCommonDialog_stub
   ScePower_stub
+  SceAudio_stub
 )
 
 vita_create_self(eboot.bin psvitaman UNSAFE)

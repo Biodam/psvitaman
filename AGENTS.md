@@ -75,6 +75,13 @@ This document provides complete architectural context, design patterns, debuggin
 6. **Screen Awake Keepalive (`src/main.c`)**:
    - Calls `sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT)` every frame to prevent Vita auto-dim and standby during long listening sessions.
 
+7. **Tactile Sound Engine (`src/sound.c`, `src/sound_data.h`)**:
+   - Uses embedded `SceAudioOut` stereo playback at 44.1 kHz.
+   - Dedicated background audio thread (`psvitaman_audio`, priority `0x10000100 + 10`, 64 KB stack) streaming PCM buffers asynchronously without blocking the 60 FPS main thread.
+   - 100% procedural embedded PCM waveform tables (`sound_data.h`) with zero external file dependencies:
+     - Heavy mechanical cassette lever latch clack (50 ms) for transport controls (Play, Pause, Skip, Prev, Shuffle, Repeat, Reset).
+     - Crisp tactile rotary detent click (20 ms) for Volume adjustments, Theme cycling, and Refresh.
+
 ---
 
 ## 3. Themes
@@ -175,6 +182,8 @@ psvitaman/
 │   ├── logger.c / .h           # Diagnostic file & UART logger (ux0:data/psvitaman/psvitaman.log)
 │   ├── main.c                  # Application entry point, event loop, power tick
 │   ├── qrcodegen.c / .h        # QR code generator for screen display
+│   ├── sound.c / .h            # Mechanical sound effects audio engine (SceAudioOut)
+│   ├── sound_data.h            # Procedural 44.1 kHz PCM audio tables (clack, click)
 │   ├── spotify.c / .h          # Spotify Web API client (MbedTLS over BSD SceNet)
 │   ├── ui.c / .h               # vita2d renderer, cassette physics, themes, AMOLED orbit
 │   └── worker.c / .h           # Background sync & command worker thread

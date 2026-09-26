@@ -203,6 +203,9 @@ static void* worker_thread_func(void *argp)
                         error_clear();
                     }
                 }
+
+                /* Immediately poll playback state right after authentication */
+                last_poll_tick = 0;
             } else {
                 lock_mutex();
                 g_playback_state.auth_error = true;
@@ -225,9 +228,13 @@ static void* worker_thread_func(void *argp)
             LOG_INFO("Processing transport command: %d", (int)cmd);
             handle_command(cmd, token_copy);
 
-            /* Delay 200ms to allow Spotify Web API target to apply command, then poll immediately */
-            sleep_ms(200);
+            /* Delay 250ms to allow Spotify Web API target to apply command, then poll immediately */
+            sleep_ms(250);
             SpotifyPlaybackState new_state;
+            lock_mutex();
+            new_state = g_playback_state;
+            unlock_mutex();
+
             if (spotify_get_playback(token_copy, &new_state)) {
                 lock_mutex();
                 g_playback_state = new_state;
@@ -237,7 +244,7 @@ static void* worker_thread_func(void *argp)
                 if (error_is_active()) {
                     AppError err;
                     error_get(&err);
-                    if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED) {
+                    if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED || err.code == APP_ERR_SPOTIFY_NO_DEVICE) {
                         error_clear();
                     }
                 }
@@ -257,6 +264,10 @@ static void* worker_thread_func(void *argp)
             if (strlen(token_copy) > 0) {
                 g_syncing = true;
                 SpotifyPlaybackState new_state;
+                lock_mutex();
+                new_state = g_playback_state;
+                unlock_mutex();
+
                 if (spotify_get_playback(token_copy, &new_state)) {
                     lock_mutex();
                     g_playback_state = new_state;
@@ -267,13 +278,13 @@ static void* worker_thread_func(void *argp)
                     if (error_is_active()) {
                         AppError err;
                         error_get(&err);
-                        if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED) {
+                        if (err.code == APP_ERR_SPOTIFY_TIMEOUT || err.code == APP_ERR_SPOTIFY_RATE_LIMIT || err.code == APP_ERR_WIFI_DISCONNECTED || err.code == APP_ERR_SPOTIFY_NO_DEVICE) {
                             error_clear();
                         }
                     }
 
                     /* Log track changes */
-                    if (new_state.is_active && strcmp(new_state.track_name, s_logged_track) != 0 && strlen(new_state.track_name) > 0) {
+                    if (strcmp(new_state.track_name, s_logged_track) != 0 && strlen(new_state.track_name) > 0) {
                         utils_safe_strncpy(s_logged_track, new_state.track_name, sizeof(s_logged_track));
                         LOG_INFO("Now playing: \"%s\" by %s [album: %s, device: %s, %s]",
                                  new_state.track_name, new_state.artist_name, new_state.album_name,

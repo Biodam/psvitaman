@@ -56,6 +56,9 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
 /* Fetch currently playing / playback state */
 bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state);
 
+/* Wake up / resume playback on best available device */
+bool spotify_resume_playback(const char *access_token);
+
 /* Transport control commands */
 bool spotify_play(const char *access_token);
 bool spotify_pause(const char *access_token);

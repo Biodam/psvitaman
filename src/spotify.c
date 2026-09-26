@@ -52,6 +52,7 @@ static void configure_curl_ssl(CURL *curl) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 6L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "PSVitaman/1.0 (PSVita; ARM)");
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 }
 
 bool spotify_init(void) {
@@ -168,8 +169,57 @@ bool spotify_refresh_token(const char *client_id, const char *client_secret,
     return success;
 }
 
-bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state) {
-    if (!access_token || !state) return false;
+static void parse_track_item(cJSON *item, SpotifyPlaybackState *state) {
+    if (!item || !state) return;
+
+    cJSON *name = cJSON_GetObjectItem(item, "name");
+    if (name && cJSON_IsString(name)) {
+        utils_safe_strncpy(state->track_name, name->valuestring, sizeof(state->track_name));
+    }
+
+    cJSON *duration = cJSON_GetObjectItem(item, "duration_ms");
+    if (duration && cJSON_IsNumber(duration)) {
+        state->duration_ms = duration->valueint;
+    }
+
+    cJSON *album = cJSON_GetObjectItem(item, "album");
+    if (album) {
+        cJSON *alb_name = cJSON_GetObjectItem(album, "name");
+        if (alb_name && cJSON_IsString(alb_name)) {
+            utils_safe_strncpy(state->album_name, alb_name->valuestring, sizeof(state->album_name));
+        }
+
+        /* Check for album art images */
+        cJSON *images = cJSON_GetObjectItem(album, "images");
+        if (images && cJSON_IsArray(images) && cJSON_GetArraySize(images) > 0) {
+            cJSON *img = cJSON_GetArrayItem(images, 0);
+            if (img) {
+                cJSON *img_url = cJSON_GetObjectItem(img, "url");
+                if (img_url && cJSON_IsString(img_url)) {
+                    utils_safe_strncpy(state->album_art_url, img_url->valuestring, sizeof(state->album_art_url));
+                }
+            }
+        }
+    }
+
+    cJSON *artists = cJSON_GetObjectItem(item, "artists");
+    if (artists && cJSON_IsArray(artists)) {
+        state->artist_name[0] = '\0';
+        int count = cJSON_GetArraySize(artists);
+        for (int i = 0; i < count && i < 3; i++) {
+            cJSON *art = cJSON_GetArrayItem(artists, i);
+            cJSON *art_name = cJSON_GetObjectItem(art, "name");
+            if (art_name && cJSON_IsString(art_name)) {
+                if (i > 0) strncat(state->artist_name, ", ", sizeof(state->artist_name) - strlen(state->artist_name) - 1);
+                strncat(state->artist_name, art_name->valuestring, sizeof(state->artist_name) - strlen(state->artist_name) - 1);
+            }
+        }
+    }
+}
+
+static bool spotify_fetch_json(const char *access_token, const char *url, cJSON **out_json, long *out_http_code) {
+    if (!access_token || !url || !out_json) return false;
+    *out_json = NULL;
 
     CURL *curl = curl_easy_init();
     if (!curl) return false;
@@ -184,7 +234,7 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, auth_header);
 
-    curl_easy_setopt(curl, CURLOPT_URL, "https://api.spotify.com/v1/me/player");
+    curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
@@ -193,116 +243,161 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (out_http_code) *out_http_code = http_code;
 
-    bool success = false;
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
 
     if (res == CURLE_OK) {
-        state->network_error = false;
-        if (http_code == 204) {
-            /* Active playback idle / paused on all devices */
-            state->is_active = false;
-            state->is_playing = false;
-            success = true;
-        } else if (http_code == 200 && chunk.data) {
-            cJSON *json = cJSON_Parse(chunk.data);
-            if (json) {
-                state->is_active = true;
-
-                cJSON *playing = cJSON_GetObjectItem(json, "is_playing");
-                state->is_playing = playing ? cJSON_IsTrue(playing) : false;
-
-                cJSON *progress = cJSON_GetObjectItem(json, "progress_ms");
-                state->progress_ms = (progress && cJSON_IsNumber(progress)) ? progress->valueint : 0;
-
-                cJSON *shuffle = cJSON_GetObjectItem(json, "shuffle_state");
-                state->shuffle_state = shuffle ? cJSON_IsTrue(shuffle) : false;
-
-                cJSON *repeat = cJSON_GetObjectItem(json, "repeat_state");
-                if (repeat && cJSON_IsString(repeat)) {
-                    if (strcmp(repeat->valuestring, "track") == 0)
-                        state->repeat_state = REPEAT_TRACK;
-                    else if (strcmp(repeat->valuestring, "context") == 0)
-                        state->repeat_state = REPEAT_CONTEXT;
-                    else
-                        state->repeat_state = REPEAT_OFF;
-                }
-
-                cJSON *device = cJSON_GetObjectItem(json, "device");
-                if (device) {
-                    cJSON *dev_name = cJSON_GetObjectItem(device, "name");
-                    if (dev_name && cJSON_IsString(dev_name)) {
-                        utils_safe_strncpy(state->device_name, dev_name->valuestring, sizeof(state->device_name));
-                    }
-                    cJSON *vol = cJSON_GetObjectItem(device, "volume_percent");
-                    if (vol && cJSON_IsNumber(vol)) state->volume_percent = vol->valueint;
-                }
-
-                cJSON *item = cJSON_GetObjectItem(json, "item");
-                if (item) {
-                    cJSON *name = cJSON_GetObjectItem(item, "name");
-                    if (name && cJSON_IsString(name)) {
-                        utils_safe_strncpy(state->track_name, name->valuestring, sizeof(state->track_name));
-                    }
-
-                    cJSON *duration = cJSON_GetObjectItem(item, "duration_ms");
-                    if (duration && cJSON_IsNumber(duration)) state->duration_ms = duration->valueint;
-
-                    cJSON *album = cJSON_GetObjectItem(item, "album");
-                    if (album) {
-                        cJSON *alb_name = cJSON_GetObjectItem(album, "name");
-                        if (alb_name && cJSON_IsString(alb_name)) {
-                            utils_safe_strncpy(state->album_name, alb_name->valuestring, sizeof(state->album_name));
-                        }
-                    }
-
-                    cJSON *artists = cJSON_GetObjectItem(item, "artists");
-                    if (artists && cJSON_IsArray(artists)) {
-                        state->artist_name[0] = '\0';
-                        int count = cJSON_GetArraySize(artists);
-                        for (int i = 0; i < count && i < 3; i++) {
-                            cJSON *art = cJSON_GetArrayItem(artists, i);
-                            cJSON *art_name = cJSON_GetObjectItem(art, "name");
-                            if (art_name && cJSON_IsString(art_name)) {
-                                if (i > 0) strncat(state->artist_name, ", ", sizeof(state->artist_name) - strlen(state->artist_name) - 1);
-                                strncat(state->artist_name, art_name->valuestring, sizeof(state->artist_name) - strlen(state->artist_name) - 1);
-                            }
-                        }
-                    }
-                }
-                cJSON_Delete(json);
-                success = true;
-            }
-        } else if (http_code == 401) {
-            state->auth_error = true;
-            LOG_WARN("Spotify API 401 Unauthorized - token expired");
-            error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
-                      "Authorization token expired or invalid. Please re-pair your account.",
-                      "Press [SELECT] to pair phone | [X] Dismiss");
-        } else if (http_code == 403) {
-            LOG_ERROR("Spotify API 403 Forbidden - Spotify Premium required");
-            error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
-                      "Spotify Web API restricts player control to Premium subscribers.",
-                      "Press [X] to dismiss");
-        } else if (http_code == 429) {
-            LOG_WARN("Spotify API 429 Rate Limit exceeded");
-            error_set(APP_ERR_SPOTIFY_RATE_LIMIT, "API Rate Limit Exceeded",
-                      "Spotify is temporarily throttling requests. Auto-recovering shortly.",
-                      "Press [X] to dismiss");
+        if (http_code == 200 && chunk.data && chunk.size > 0) {
+            *out_json = cJSON_Parse(chunk.data);
+            free(chunk.data);
+            return (*out_json != NULL);
         }
-    } else {
+        if (chunk.data) free(chunk.data);
+        return (http_code >= 200 && http_code < 300);
+    }
+
+    if (chunk.data) free(chunk.data);
+    return false;
+}
+
+bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state) {
+    if (!access_token || !state) return false;
+
+    /*
+     * Query /v1/me/player to get active player status (device, volume, shuffle, repeat, track).
+     * If /v1/me/player returns 204 No Content (very common when Spotify mobile is idle/paused),
+     * fallback to /v1/me/player/currently-playing which often returns the last playing track item!
+     */
+    cJSON *json = NULL;
+    long http_code = 0;
+    bool success = false;
+
+    bool query_res = spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player", &json, &http_code);
+
+    if (http_code == 200 && json) {
+        state->network_error = false;
+        state->is_active = true;
+
+        cJSON *playing = cJSON_GetObjectItem(json, "is_playing");
+        state->is_playing = playing ? cJSON_IsTrue(playing) : false;
+
+        cJSON *progress = cJSON_GetObjectItem(json, "progress_ms");
+        state->progress_ms = (progress && cJSON_IsNumber(progress)) ? progress->valueint : 0;
+
+        cJSON *shuffle = cJSON_GetObjectItem(json, "shuffle_state");
+        state->shuffle_state = shuffle ? cJSON_IsTrue(shuffle) : false;
+
+        cJSON *repeat = cJSON_GetObjectItem(json, "repeat_state");
+        if (repeat && cJSON_IsString(repeat)) {
+            if (strcmp(repeat->valuestring, "track") == 0)
+                state->repeat_state = REPEAT_TRACK;
+            else if (strcmp(repeat->valuestring, "context") == 0)
+                state->repeat_state = REPEAT_CONTEXT;
+            else
+                state->repeat_state = REPEAT_OFF;
+        }
+
+        cJSON *device = cJSON_GetObjectItem(json, "device");
+        if (device) {
+            cJSON *dev_name = cJSON_GetObjectItem(device, "name");
+            if (dev_name && cJSON_IsString(dev_name)) {
+                utils_safe_strncpy(state->device_name, dev_name->valuestring, sizeof(state->device_name));
+            }
+            cJSON *vol = cJSON_GetObjectItem(device, "volume_percent");
+            if (vol && cJSON_IsNumber(vol)) state->volume_percent = vol->valueint;
+        }
+
+        cJSON *item = cJSON_GetObjectItem(json, "item");
+        if (item && !cJSON_IsNull(item)) {
+            parse_track_item(item, state);
+        }
+
+        cJSON_Delete(json);
+        return true;
+    }
+
+    if (json) {
+        cJSON_Delete(json);
+        json = NULL;
+    }
+
+    if (http_code == 204) {
+        /*
+         * Active playback is paused/idle.
+         * Try /v1/me/player/currently-playing to fetch track information.
+         */
+        state->network_error = false;
+        state->is_playing = false;
+        state->is_active = false;
+
+        cJSON *cp_json = NULL;
+        long cp_code = 0;
+        if (spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player/currently-playing", &cp_json, &cp_code) && cp_json) {
+            cJSON *item = cJSON_GetObjectItem(cp_json, "item");
+            if (item && !cJSON_IsNull(item)) {
+                parse_track_item(item, state);
+            }
+            cJSON *progress = cJSON_GetObjectItem(cp_json, "progress_ms");
+            if (progress && cJSON_IsNumber(progress)) {
+                state->progress_ms = progress->valueint;
+            }
+            cJSON_Delete(cp_json);
+            return true;
+        }
+
+        /* If currently-playing is also 204, get registered device list to at least show device name */
+        cJSON *dev_json = NULL;
+        long dev_code = 0;
+        if (spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player/devices", &dev_json, &dev_code) && dev_json) {
+            cJSON *devices = cJSON_GetObjectItem(dev_json, "devices");
+            if (devices && cJSON_IsArray(devices) && cJSON_GetArraySize(devices) > 0) {
+                cJSON *first_dev = cJSON_GetArrayItem(devices, 0);
+                cJSON *dname = cJSON_GetObjectItem(first_dev, "name");
+                if (dname && cJSON_IsString(dname)) {
+                    snprintf(state->device_name, sizeof(state->device_name), "%s (Idle)", dname->valuestring);
+                }
+            }
+            cJSON_Delete(dev_json);
+        }
+        return true;
+    }
+
+    if (http_code == 401) {
+        state->auth_error = true;
+        LOG_WARN("Spotify API 401 Unauthorized - token expired");
+        error_set(APP_ERR_SPOTIFY_AUTH, "Spotify Auth Expired",
+                  "Authorization token expired or invalid. Please re-pair your account.",
+                  "Press [SELECT] to pair phone | [X] Dismiss");
+        return false;
+    }
+
+    if (http_code == 403) {
+        LOG_ERROR("Spotify API 403 Forbidden - Spotify Premium required");
+        error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
+                  "Spotify Web API restricts player control to Premium subscribers.",
+                  "Press [X] to dismiss");
+        return false;
+    }
+
+    if (http_code == 429) {
+        LOG_WARN("Spotify API 429 Rate Limit exceeded");
+        error_set(APP_ERR_SPOTIFY_RATE_LIMIT, "API Rate Limit Exceeded",
+                  "Spotify is temporarily throttling requests. Auto-recovering shortly.",
+                  "Press [X] to dismiss");
+        return false;
+    }
+
+    if (!query_res) {
         state->network_error = true;
-        utils_safe_strncpy(state->error_message, curl_easy_strerror(res), sizeof(state->error_message));
-        LOG_WARN("Spotify get_playback failed: %s", state->error_message);
+        LOG_WARN("Spotify get_playback failed (HTTP %ld)", http_code);
         error_set(APP_ERR_SPOTIFY_TIMEOUT, "Spotify Network Timeout",
                   "Failed to reach Spotify API. Please verify your Wi-Fi connection.",
                   "Press [X] to dismiss");
     }
 
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-    if (chunk.data) free(chunk.data);
-
-    return success;
+    return false;
 }
 
 static bool spotify_send_rest_cmd(const char *access_token, const char *url, const char *method) {
@@ -320,6 +415,7 @@ static bool spotify_send_rest_cmd(const char *access_token, const char *url, con
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     configure_curl_ssl(curl);
 
@@ -335,9 +431,6 @@ static bool spotify_send_rest_cmd(const char *access_token, const char *url, con
             return true;
         } else if (http_code == 404) {
             LOG_WARN("Spotify command (%s %s) failed: HTTP 404 No Active Device", method, url);
-            error_set(APP_ERR_SPOTIFY_NO_DEVICE, "No Active Spotify Device",
-                      "Spotify did not find an active playback device. Start music on phone, PC, or speaker first.",
-                      "Press [X] to dismiss");
         } else if (http_code == 403) {
             LOG_ERROR("Spotify command (%s %s) failed: HTTP 403 Premium Required", method, url);
             error_set(APP_ERR_SPOTIFY_PREMIUM, "Spotify Premium Required",
@@ -353,8 +446,179 @@ static bool spotify_send_rest_cmd(const char *access_token, const char *url, con
     return false;
 }
 
+/*
+ * Send a JSON request payload to Spotify Web API.
+ */
+static bool spotify_send_json_cmd(const char *access_token, const char *url, const char *method, const char *json_body) {
+    if (!access_token || !url) return false;
+
+    CURL *curl = curl_easy_init();
+    if (!curl) return false;
+
+    char auth_header[600];
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", access_token);
+
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, auth_header);
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+    if (json_body) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    configure_curl_ssl(curl);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK && http_code >= 200 && http_code < 300) {
+        return true;
+    }
+
+    LOG_WARN("spotify_send_json_cmd (%s %s) returned HTTP %ld", method, url, http_code);
+    return false;
+}
+
+/*
+ * Discover user's registered Spotify devices (Smartphone, Computer, Speaker, etc.).
+ * Returns true if a usable device is found and stores device_id in out_device_id.
+ */
+static bool spotify_get_best_device(const char *access_token, char *out_device_id, size_t max_len, char *out_name, size_t name_max) {
+    if (!access_token || !out_device_id) return false;
+    out_device_id[0] = '\0';
+    if (out_name) out_name[0] = '\0';
+
+    cJSON *json = NULL;
+    long http_code = 0;
+    if (!spotify_fetch_json(access_token, "https://api.spotify.com/v1/me/player/devices", &json, &http_code) || !json) {
+        LOG_WARN("spotify_get_best_device: failed to fetch devices (HTTP %ld)", http_code);
+        return false;
+    }
+
+    cJSON *devices = cJSON_GetObjectItem(json, "devices");
+    if (!devices || !cJSON_IsArray(devices) || cJSON_GetArraySize(devices) == 0) {
+        LOG_WARN("spotify_get_best_device: no registered devices found in Spotify account");
+        cJSON_Delete(json);
+        return false;
+    }
+
+    int dev_count = cJSON_GetArraySize(devices);
+    int best_index = -1;
+
+    /*
+     * Priority:
+     * 1. Already active device
+     * 2. Smartphone or Computer
+     * 3. First device in list
+     */
+    for (int i = 0; i < dev_count; i++) {
+        cJSON *dev = cJSON_GetArrayItem(devices, i);
+        if (!dev) continue;
+
+        cJSON *is_active = cJSON_GetObjectItem(dev, "is_active");
+        if (is_active && cJSON_IsTrue(is_active)) {
+            best_index = i;
+            break;
+        }
+
+        cJSON *type = cJSON_GetObjectItem(dev, "type");
+        if (type && cJSON_IsString(type)) {
+            if (strcasecmp(type->valuestring, "Smartphone") == 0 ||
+                strcasecmp(type->valuestring, "Computer") == 0) {
+                if (best_index < 0) best_index = i;
+            }
+        }
+    }
+
+    if (best_index < 0) {
+        best_index = 0;
+    }
+
+    cJSON *target = cJSON_GetArrayItem(devices, best_index);
+    if (target) {
+        cJSON *id = cJSON_GetObjectItem(target, "id");
+        if (id && cJSON_IsString(id) && strlen(id->valuestring) > 0) {
+            utils_safe_strncpy(out_device_id, id->valuestring, max_len);
+            cJSON *name = cJSON_GetObjectItem(target, "name");
+            if (name && cJSON_IsString(name) && out_name) {
+                utils_safe_strncpy(out_name, name->valuestring, name_max);
+            }
+            LOG_INFO("spotify_get_best_device: selected device '%s' (id=%s)",
+                     out_name ? out_name : "unknown", out_device_id);
+            cJSON_Delete(json);
+            return true;
+        }
+    }
+
+    cJSON_Delete(json);
+    return false;
+}
+
+/*
+ * Transfer playback to a device and optionally start playback.
+ */
+static bool spotify_transfer_playback(const char *access_token, const char *device_id, bool play) {
+    if (!access_token || !device_id || strlen(device_id) == 0) return false;
+
+    char payload[256];
+    snprintf(payload, sizeof(payload), "{\"device_ids\":[\"%s\"],\"play\":%s}",
+             device_id, play ? "true" : "false");
+
+    LOG_INFO("spotify_transfer_playback: waking up device %s (play=%s)", device_id, play ? "true" : "false");
+    return spotify_send_json_cmd(access_token, "https://api.spotify.com/v1/me/player", "PUT", payload);
+}
+
+/*
+ * Wake up best device and resume playback.
+ */
+bool spotify_resume_playback(const char *access_token) {
+    if (!access_token) return false;
+
+    /* 1. Try regular play command first */
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/play", "PUT")) {
+        LOG_INFO("spotify_resume_playback: direct play command succeeded");
+        return true;
+    }
+
+    /* 2. Direct play failed (HTTP 404 No Active Device). Find best device. */
+    LOG_INFO("Direct play returned 404. Finding registered Spotify devices...");
+    char device_id[128] = {0};
+    char device_name[128] = {0};
+
+    if (spotify_get_best_device(access_token, device_id, sizeof(device_id), device_name, sizeof(device_name))) {
+        LOG_INFO("Found available device '%s'. Transferring playback with play=true...", device_name);
+        if (spotify_transfer_playback(access_token, device_id, true)) {
+            LOG_INFO("Successfully resumed playback on '%s'!", device_name);
+            return true;
+        }
+
+        /* Fallback: transfer then play */
+        char play_url[256];
+        snprintf(play_url, sizeof(play_url), "https://api.spotify.com/v1/me/player/play?device_id=%s", device_id);
+        if (spotify_send_rest_cmd(access_token, play_url, "PUT")) {
+            LOG_INFO("Resumed playback with explicit device_id query on '%s'!", device_name);
+            return true;
+        }
+    }
+
+    /* No active device found */
+    LOG_WARN("Could not resume playback: No active or discoverable Spotify device");
+    error_set(APP_ERR_SPOTIFY_NO_DEVICE, "No Active Spotify Device",
+              "Spotify could not find an active player. Open Spotify on phone, PC, or speaker.",
+              "Press [X] to dismiss");
+    return false;
+}
+
 bool spotify_play(const char *access_token) {
-    return spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/play", "PUT");
+    return spotify_resume_playback(access_token);
 }
 
 bool spotify_pause(const char *access_token) {
@@ -362,11 +626,31 @@ bool spotify_pause(const char *access_token) {
 }
 
 bool spotify_next(const char *access_token) {
-    return spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/next", "POST");
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/next", "POST")) {
+        return true;
+    }
+    /* If 404, wake device and try next */
+    char dev_id[128] = {0};
+    if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
+        char url[256];
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/next?device_id=%s", dev_id);
+        return spotify_send_rest_cmd(access_token, url, "POST");
+    }
+    return false;
 }
 
 bool spotify_previous(const char *access_token) {
-    return spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/previous", "POST");
+    if (spotify_send_rest_cmd(access_token, "https://api.spotify.com/v1/me/player/previous", "POST")) {
+        return true;
+    }
+    /* If 404, wake device and try previous */
+    char dev_id[128] = {0};
+    if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
+        char url[256];
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/previous?device_id=%s", dev_id);
+        return spotify_send_rest_cmd(access_token, url, "POST");
+    }
+    return false;
 }
 
 bool spotify_set_volume(const char *access_token, int volume_percent) {
@@ -392,3 +676,4 @@ bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s", state_str);
     return spotify_send_rest_cmd(access_token, url, "PUT");
 }
+

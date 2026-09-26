@@ -78,6 +78,20 @@ if(NOT "${CFG_SPOTIFY_REFRESH_TOKEN}" STREQUAL "")
   add_definitions(-DDEFAULT_SPOTIFY_REFRESH_TOKEN="${CFG_SPOTIFY_REFRESH_TOKEN}")
 endif()
 
+# Git Commit Hash Injection
+execute_process(
+  COMMAND git rev-parse --short HEAD
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE GIT_COMMIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT GIT_COMMIT_HASH)
+  set(GIT_COMMIT_HASH "dev")
+endif()
+add_definitions(-DGIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+message(STATUS "Configuring PSVitaman build for commit: ${GIT_COMMIT_HASH}")
+
 set(SOURCES
   src/main.c
   src/config.c
@@ -92,6 +106,7 @@ set(SOURCES
   src/qrcodegen.c
   src/logger.c
   src/error.c
+  src/root_certs.c
 )
 
 add_executable(psvitaman ${SOURCES})

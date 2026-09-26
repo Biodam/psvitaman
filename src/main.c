@@ -16,6 +16,11 @@
 #include "http_server.h"
 #include "logger.h"
 #include "error.h"
+#include "root_certs.h"
+
+#ifndef GIT_COMMIT_HASH
+#define GIT_COMMIT_HASH "dev"
+#endif
 
 #if defined(__psp2__) || defined(__VITA__)
 #include <psp2/kernel/processmgr.h>
@@ -51,15 +56,13 @@ int main(int argc, char *argv[]) {
     sceNetInit(&net_param);
     sceNetCtlInit();
 
-    /* 3. Initialize SceSsl & SceHttp Native Stacks */
-    sceSslInit(300 * 1024);
+    /* 3. Initialize SceSsl & SceHttp Native Stacks with Embedded Root CAs */
+    sceSslInit(1024 * 1024);
     sceHttpInit(1024 * 1024);
-    sceHttpsDisableOption(
+    root_certs_load();
+    sceHttpsEnableOption(
         SCE_HTTPS_FLAG_SERVER_VERIFY |
-        SCE_HTTPS_FLAG_CLIENT_VERIFY |
         SCE_HTTPS_FLAG_CN_CHECK |
-        SCE_HTTPS_FLAG_NOT_AFTER_CHECK |
-        SCE_HTTPS_FLAG_NOT_BEFORE_CHECK |
         SCE_HTTPS_FLAG_KNOWN_CA_CHECK
     );
 
@@ -71,7 +74,7 @@ int main(int argc, char *argv[]) {
     /* 5. Initialize Network & Diagnostics */
     log_init("ux0:data/psvitaman/psvitaman.log");
     error_init();
-    LOG_INFO("PSVitaman initializing...");
+    LOG_INFO("PSVitaman initializing... [commit: %s]", GIT_COMMIT_HASH);
 
     spotify_init();
     input_init();
@@ -253,6 +256,7 @@ int main(int argc, char *argv[]) {
 
 #if defined(__psp2__) || defined(__VITA__)
     vita2d_fini();
+    root_certs_unload();
     sceHttpTerm();
     sceSslTerm();
     sceNetCtlTerm();

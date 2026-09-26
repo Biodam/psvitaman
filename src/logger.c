@@ -94,9 +94,13 @@ bool log_init(const char *override_path) {
         s_log_file = fopen(s_log_path, "a");
     }
 
+#ifndef GIT_COMMIT_HASH
+#define GIT_COMMIT_HASH "dev"
+#endif
+
     if (s_log_file) {
         log_write(LOG_LEVEL_INFO, __FILE__, __LINE__, "========================================");
-        log_write(LOG_LEVEL_INFO, __FILE__, __LINE__, "PSVitaman Logger Started - Build " __DATE__ " " __TIME__);
+        log_write(LOG_LEVEL_INFO, __FILE__, __LINE__, "PSVitaman Logger Started - Build " __DATE__ " " __TIME__ " [commit: %s]", GIT_COMMIT_HASH);
         log_write(LOG_LEVEL_INFO, __FILE__, __LINE__, "Target log file: %s", s_log_path);
         log_write(LOG_LEVEL_INFO, __FILE__, __LINE__, "========================================");
         return true;

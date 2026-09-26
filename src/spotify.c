@@ -38,9 +38,12 @@ typedef struct {
 
 static int ssl_callback(unsigned int verifyErr, void * const sslCert[], int certNum, void *userArg) {
     (void)sslCert;
-    (void)certNum;
     (void)userArg;
-    LOG_INFO("ssl_callback: verifyErr = 0x%08x, certNum = %d (accepting certificate)", verifyErr, certNum);
+    if (verifyErr == 0) {
+        LOG_INFO("ssl_callback: SSL certificate verified and trusted! (chain len: %d)", certNum);
+    } else {
+        LOG_WARN("ssl_callback: cert verify code 0x%08x (chain len: %d)", verifyErr, certNum);
+    }
     return 0;
 }
 
@@ -50,19 +53,16 @@ static bool do_http_request(const char *url, HttpMethodType method, const char *
     if (!url) return false;
     if (out_http_status) *out_http_status = 0;
 
-    int tmpl = sceHttpCreateTemplate("PSVitaman/1.0 (PSVita; ARM)", SCE_HTTP_VERSION_1_1, SCE_TRUE);
+    int tmpl = sceHttpCreateTemplate("PSVitaman/1.0 libhttp/3.65 (PS Vita)", SCE_HTTP_VERSION_1_1, SCE_FALSE);
     if (tmpl < 0) {
         LOG_ERROR("sceHttpCreateTemplate failed: 0x%08x", tmpl);
         return false;
     }
 
     sceHttpsSetSslCallback(tmpl, ssl_callback, NULL);
-    sceHttpsDisableOption(
+    sceHttpsEnableOption(
         SCE_HTTPS_FLAG_SERVER_VERIFY |
-        SCE_HTTPS_FLAG_CLIENT_VERIFY |
         SCE_HTTPS_FLAG_CN_CHECK |
-        SCE_HTTPS_FLAG_NOT_AFTER_CHECK |
-        SCE_HTTPS_FLAG_NOT_BEFORE_CHECK |
         SCE_HTTPS_FLAG_KNOWN_CA_CHECK
     );
 

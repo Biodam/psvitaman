@@ -4,9 +4,25 @@ on:
   push:
     branches: [ master, main ]
     tags: [ 'v*' ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
     branches: [ master, main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.gitignore'
+      - 'LICENSE'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -14,6 +30,23 @@ jobs:
     container: vitasdk/vitasdk:latest
 
     steps:
+      - name: Check Quota & Visibility Safeguard
+        run: |
+          echo "=========================================="
+          echo "Checking GitHub Actions Quota Safeguards..."
+          echo "=========================================="
+          IS_PRIVATE="${{ github.event.repository.private }}"
+          if [ "$IS_PRIVATE" = "true" ]; then
+            echo "::warning::Repository is PRIVATE! Builds consume billable Actions minutes."
+            if [ "${{ secrets.ALLOW_PRIVATE_BUILDS }}" != "true" ] && [ "${{ vars.ALLOW_PRIVATE_BUILDS }}" != "true" ]; then
+              echo "::error::Build aborted by quota safeguard! Set repository to PUBLIC or configure ALLOW_PRIVATE_BUILDS=true."
+              exit 1
+            fi
+          else
+            echo "Repository is PUBLIC -> GitHub Actions minutes are 100% FREE and UNLIMITED."
+            echo "Quota safeguard: PASSED (Zero billing cost)."
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

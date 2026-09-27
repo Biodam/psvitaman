@@ -115,7 +115,7 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 
 ```
 +--------------------------------------------------------------------+
-| [HUD]  TRACK TITLE - ARTIST                      VOL: 85%  [WIFI]  |  Y: 6..54
+| [HUD] SONY [MODEL]  DEV: Speaker  PHONES (o)(o)  VOL: 85%  [BAT 85%] * |  Y: 6..54
 +--------------------------------------------------------------------+
 |                                                                    |
 |                      CASSETTE TAPE BAY                             |

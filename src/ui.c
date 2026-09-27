@@ -14,6 +14,7 @@
 
 #if defined(__psp2__) || defined(__VITA__)
 #include <vita2d.h>
+#include <psp2/power.h>
 #else
 /* Fallback mocks for non-Vita compilers */
 typedef void* vita2d_pgf;
@@ -626,6 +627,84 @@ static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase
     }
 }
 
+static void draw_battery_indicator(float bx, float by, const AppTheme *theme) {
+    int bat_pct = 100;
+    bool is_charging = false;
+    bool is_low = false;
+
+#if defined(__psp2__) || defined(__VITA__)
+    bat_pct = scePowerGetBatteryLifePercent();
+    is_charging = (scePowerIsBatteryCharging() == 1);
+    is_low = (scePowerIsLowBattery() == 1);
+#endif
+
+    float bw = 24.0f;
+    float bh = 13.0f;
+    float x = bx - bw * 0.5f;
+    float y = by - bh * 0.5f;
+
+    /* 1. Outer Battery Casing */
+    vita2d_draw_rectangle(x, y, bw, bh, theme->border_light);
+    vita2d_draw_rectangle(x + 1.0f, y + 1.0f, bw - 2.0f, bh - 2.0f, RGBA8(12, 14, 18, 255));
+
+    /* 2. Positive Terminal Nub on Right */
+    vita2d_draw_rectangle(x + bw, by - 2.5f, 2.5f, 5.0f, theme->border_light);
+
+    /* 3. Fill Level */
+    float inner_x = x + 2.0f;
+    float inner_y = y + 2.0f;
+    float inner_w = bw - 4.0f; /* 20.0f */
+    float inner_h = bh - 4.0f; /* 9.0f */
+
+    unsigned int fill_col = theme->btn_active_led;
+    if (is_charging) {
+        fill_col = RGBA8(255, 195, 25, 255); /* Amber / Charging Gold */
+    } else if (is_low || (bat_pct >= 0 && bat_pct <= 20)) {
+        fill_col = RGBA8(235, 45, 45, 255);  /* Warning Red */
+    }
+
+    if (bat_pct >= 0) {
+        float ratio = (float)bat_pct / 100.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+        if (ratio < 0.0f) ratio = 0.0f;
+
+        float cur_w = inner_w * ratio;
+        if (cur_w > 1.0f) {
+            vita2d_draw_rectangle(inner_x, inner_y, cur_w, inner_h, fill_col);
+        }
+
+        /* 3 Segments divider lines for authentic retro LCD gauge look */
+        for (int seg = 1; seg <= 2; seg++) {
+            float div_x = inner_x + seg * (inner_w / 3.0f);
+            vita2d_draw_line(div_x, inner_y, div_x, inner_y + inner_h, RGBA8(12, 14, 18, 180));
+        }
+    } else {
+        /* Running on AC Power (e.g. PSTV) */
+        vita2d_draw_rectangle(inner_x, inner_y, inner_w, inner_h, theme->btn_active_led);
+    }
+
+    /* 4. Text Display (% or AC) */
+    if (s_font) {
+        char bat_str[16];
+        if (bat_pct >= 0) {
+            if (is_charging) {
+                snprintf(bat_str, sizeof(bat_str), "+%d%%", bat_pct);
+            } else {
+                snprintf(bat_str, sizeof(bat_str), "%d%%", bat_pct);
+            }
+        } else {
+            snprintf(bat_str, sizeof(bat_str), "AC");
+        }
+
+        int tw = vita2d_pgf_text_width(s_font, 0.62f, bat_str);
+        unsigned int text_col = (bat_pct >= 0 && bat_pct <= 20 && !is_charging)
+            ? RGBA8(235, 60, 60, 255)
+            : (is_charging ? RGBA8(255, 205, 50, 255) : theme->text_muted);
+
+        vita2d_pgf_draw_text(s_font, (int)(x - tw - 6.0f), (int)(by + 6.0f), text_col, 0.62f, bat_str);
+    }
+}
+
 static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *theme, int ox, int oy, bool is_syncing) {
     float tx = 24.0f + ox;
     float ty = 8.0f + oy;
@@ -644,39 +723,42 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
         vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 27), theme->text_primary, 0.88f, "SONY");
 
         /* Model Stamp */
-        vita2d_pgf_draw_text(s_font, (int)(tx + 76), (int)(ty + 27), theme->text_accent, 0.68f, theme->model_stamp);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 72), (int)(ty + 27), theme->text_accent, 0.65f, theme->model_stamp);
 
         /* Spotify Device Name (clipped safely in center column) */
         char dev_hud[128];
         snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
-        vita2d_set_clip_rectangle((int)(tx + 360), (int)(ty + 6), 250, 30);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 360), (int)(ty + 27), theme->text_muted, 0.70f, dev_hud);
+        vita2d_set_clip_rectangle((int)(tx + 300), (int)(ty + 6), 220, 30);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 300), (int)(ty + 27), theme->text_muted, 0.68f, dev_hud);
         vita2d_disable_clipping();
 
         /* Headphone Jacks motif (authentic dual 3.5mm Walkman sockets) */
-        vita2d_pgf_draw_text(s_font, (int)(tx + 630), (int)(ty + 27), theme->text_muted, 0.62f, "PHONES");
-        vita2d_draw_fill_circle(tx + 704, ty + 19, 4.5f, RGBA8(180, 185, 195, 255));
-        vita2d_draw_fill_circle(tx + 704, ty + 19, 2.0f, RGBA8(20, 24, 30, 255));
-        vita2d_draw_fill_circle(tx + 722, ty + 19, 4.5f, RGBA8(180, 185, 195, 255));
-        vita2d_draw_fill_circle(tx + 722, ty + 19, 2.0f, RGBA8(20, 24, 30, 255));
+        vita2d_pgf_draw_text(s_font, (int)(tx + 540), (int)(ty + 27), theme->text_muted, 0.58f, "PHONES");
+        vita2d_draw_fill_circle(tx + 605, ty + 20, 4.5f, RGBA8(180, 185, 195, 255));
+        vita2d_draw_fill_circle(tx + 605, ty + 20, 2.0f, RGBA8(20, 24, 30, 255));
+        vita2d_draw_fill_circle(tx + 623, ty + 20, 4.5f, RGBA8(180, 185, 195, 255));
+        vita2d_draw_fill_circle(tx + 623, ty + 20, 2.0f, RGBA8(20, 24, 30, 255));
 
         /* Volume Display */
         char vol_hud[32];
         snprintf(vol_hud, sizeof(vol_hud), "VOL %d%%", state->volume_percent);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 750), (int)(ty + 27), theme->text_primary, 0.74f, vol_hud);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 660), (int)(ty + 27), theme->text_primary, 0.70f, vol_hud);
 
         /* 5-Bar Volume Graphic */
         int num_bars = (state->volume_percent * 5 + 50) / 100;
         for (int b = 0; b < 5; b++) {
-            float bx = tx + 828 + b * 6.0f;
+            float bx = tx + 735 + b * 6.0f;
             float bh = 4.0f + b * 2.5f;
             unsigned int bc = (b < num_bars) ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
             vita2d_draw_rectangle(bx, ty + 25.0f - bh, 4.0f, bh, bc);
         }
 
+        /* Battery Indicator on Top Right */
+        draw_battery_indicator(tx + tw - 42.0f, ty + 20.0f, theme);
+
         /* Live Sync Pulse Dot */
         unsigned int sync_c = is_syncing ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
-        vita2d_draw_fill_circle(tx + tw - 18, ty + 19, 4.5f, sync_c);
+        vita2d_draw_fill_circle(tx + tw - 14, ty + 20, 4.0f, sync_c);
     }
 }
 

@@ -479,6 +479,30 @@ void ui_update(float delta_time, const SpotifyPlaybackState *state, int interpol
     }
 }
 
+static inline unsigned int color_lerp(unsigned int c1, unsigned int c2, float t) {
+    int r1 = (c1 >> 0) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = (c1 >> 16) & 0xFF, a1 = (c1 >> 24) & 0xFF;
+    int r2 = (c2 >> 0) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = (c2 >> 16) & 0xFF, a2 = (c2 >> 24) & 0xFF;
+    int r = r1 + (int)((r2 - r1) * t);
+    int g = g1 + (int)((g2 - g1) * t);
+    int b = b1 + (int)((b2 - b1) * t);
+    int a = a1 + (int)((a2 - a1) * t);
+    if (r > 255) r = 255; if (r < 0) r = 0;
+    if (g > 255) g = 255; if (g < 0) g = 0;
+    if (b > 255) b = 255; if (b < 0) b = 0;
+    return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
+}
+
+static inline unsigned int color_tint(unsigned int c, float factor) {
+    int r = (int)(((c >> 0) & 0xFF) * factor);
+    int g = (int)(((c >> 8) & 0xFF) * factor);
+    int b = (int)(((c >> 16) & 0xFF) * factor);
+    int a = (c >> 24) & 0xFF;
+    if (r > 255) r = 255; if (r < 0) r = 0;
+    if (g > 255) g = 255; if (g < 0) g = 0;
+    if (b > 255) b = 255; if (b < 0) b = 0;
+    return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
+}
+
 static void draw_beveled_box(float x, float y, float w, float h,
                              unsigned int bg, unsigned int border_hi, unsigned int border_lo) {
     vita2d_draw_rectangle(x, y, w, h, bg);
@@ -492,6 +516,184 @@ static void draw_beveled_box(float x, float y, float w, float h,
     vita2d_draw_line(x + 1, y + h - 2, x + w, y + h - 2, border_lo);
     vita2d_draw_line(x + w - 1, y, x + w - 1, y + h, border_lo);
     vita2d_draw_line(x + w - 2, y + 1, x + w - 2, y + h, border_lo);
+}
+
+static void draw_skeuomorphic_panel(float x, float y, float w, float h,
+                                   unsigned int col_base, bool sunken) {
+    /* 1. Ambient drop shadow for raised panel, or outer rim highlight for sunken cavity */
+    if (!sunken) {
+        vita2d_draw_rectangle(x + 2, y + h, w - 2, 3.0f, RGBA8(0, 0, 0, 45));
+        vita2d_draw_rectangle(x + 4, y + h + 3, w - 6, 2.0f, RGBA8(0, 0, 0, 20));
+        vita2d_draw_rectangle(x + w, y + 2, 3.0f, h - 2, RGBA8(0, 0, 0, 35));
+    }
+
+    /* 2. Soft directional surface gradient (light from above) */
+    unsigned int col_top = sunken ? color_tint(col_base, 0.86f) : color_tint(col_base, 1.14f);
+    unsigned int col_bot = sunken ? color_tint(col_base, 1.06f) : color_tint(col_base, 0.86f);
+    float step = 2.0f;
+    int num_steps = (int)(h / step);
+    for (int i = 0; i < num_steps; i++) {
+        float t = (float)i / (float)num_steps;
+        vita2d_draw_rectangle(x, y + i * step, w, step, color_lerp(col_top, col_bot, t));
+    }
+
+    /* 3. Beveled chamfer light & shadow edges */
+    unsigned int hi = sunken ? RGBA8(0, 0, 0, 100) : color_tint(col_base, 1.40f);
+    unsigned int lo = sunken ? color_tint(col_base, 1.25f) : RGBA8(0, 0, 0, 115);
+
+    vita2d_draw_line(x, y, x + w, y, hi);
+    vita2d_draw_line(x + 1, y + 1, x + w - 1, y + 1, sunken ? RGBA8(0, 0, 0, 50) : color_tint(col_base, 1.22f));
+    vita2d_draw_line(x, y, x, y + h, hi);
+    vita2d_draw_line(x + 1, y + 1, x + 1, y + h - 1, sunken ? RGBA8(0, 0, 0, 50) : color_tint(col_base, 1.22f));
+
+    vita2d_draw_line(x, y + h - 1, x + w, y + h - 1, lo);
+    vita2d_draw_line(x + 1, y + h - 2, x + w - 1, y + h - 2, sunken ? color_tint(col_base, 1.15f) : RGBA8(0, 0, 0, 60));
+    vita2d_draw_line(x + w - 1, y, x + w - 1, y + h, lo);
+    vita2d_draw_line(x + w - 2, y + 1, x + w - 2, y + h - 1, sunken ? color_tint(col_base, 1.15f) : RGBA8(0, 0, 0, 60));
+}
+
+static void draw_skeuomorphic_key(float x, float y, float w, float h,
+                                  unsigned int base_col, bool is_pressed, bool is_special) {
+    float draw_y = y + (is_pressed ? 3.0f : 0.0f);
+    float draw_h = h - (is_pressed ? 2.0f : 0.0f);
+
+    /* 1. Key Drop Shadow underneath inside the trench */
+    if (!is_pressed) {
+        vita2d_draw_rectangle(x + 1, draw_y + draw_h, w - 2, 4.0f, RGBA8(0, 0, 0, 85));
+        vita2d_draw_rectangle(x + 3, draw_y + draw_h + 4, w - 6, 2.0f, RGBA8(0, 0, 0, 35));
+    } else {
+        vita2d_draw_rectangle(x + 1, draw_y + draw_h, w - 2, 2.0f, RGBA8(0, 0, 0, 110));
+    }
+
+    /* 2. Vertical surface gradient for 3D body */
+    unsigned int col_top = is_pressed ? color_tint(base_col, 0.90f) : color_tint(base_col, 1.18f);
+    unsigned int col_bot = is_pressed ? color_tint(base_col, 0.78f) : color_tint(base_col, 0.85f);
+    float step = 2.0f;
+    int num_steps = (int)(draw_h / step);
+    for (int i = 0; i < num_steps; i++) {
+        float t = (float)i / (float)num_steps;
+        vita2d_draw_rectangle(x, draw_y + i * step, w, step, color_lerp(col_top, col_bot, t));
+    }
+
+    /* 3. Beveled chamfer edge highlights & contact shadows */
+    unsigned int top_hi = is_pressed ? color_tint(base_col, 0.95f) : color_tint(base_col, 1.45f);
+    unsigned int bot_lo = is_pressed ? color_tint(base_col, 0.68f) : RGBA8(0, 0, 0, 125);
+
+    vita2d_draw_line(x, draw_y, x + w, draw_y, top_hi);
+    vita2d_draw_line(x + 1, draw_y + 1, x + w - 1, draw_y + 1, color_tint(base_col, 1.25f));
+    vita2d_draw_line(x, draw_y, x, draw_y + draw_h, top_hi);
+    vita2d_draw_line(x + w - 1, draw_y, x + w - 1, draw_y + draw_h, bot_lo);
+    vita2d_draw_line(x, draw_y + draw_h - 1, x + w, draw_y + draw_h - 1, bot_lo);
+
+    /* 4. Tactile Spherical Concave Finger-Cup (Dieter Rams / Teenage Engineering / Image 2 style) */
+    float cup_cx = x + w * 0.5f;
+    float cup_cy = draw_y + 27.0f;
+    float cup_r = 23.0f;
+
+    /* Drop-in shadow at top-left of the concave bowl */
+    vita2d_draw_fill_circle(cup_cx, cup_cy, cup_r, color_tint(base_col, is_pressed ? 0.80f : 0.88f));
+    vita2d_draw_fill_circle(cup_cx - 1.5f, cup_cy - 1.5f, cup_r * 0.94f, RGBA8(0, 0, 0, is_pressed ? 60 : 45));
+
+    /* Highlight reflection at bottom-right of the concave bowl */
+    vita2d_draw_fill_circle(cup_cx + 1.5f, cup_cy + 1.5f, cup_r * 0.88f, RGBA8(255, 255, 255, is_pressed ? 18 : 34));
+
+    /* Center blend */
+    vita2d_draw_fill_circle(cup_cx, cup_cy, cup_r * 0.72f, color_tint(base_col, is_pressed ? 0.78f : 0.92f));
+    vita2d_draw_fill_circle(cup_cx + 0.5f, cup_cy + 0.5f, cup_r * 0.48f, color_tint(base_col, is_pressed ? 0.76f : 0.95f));
+}
+
+static void draw_skeuomorphic_led(float cx, float cy, unsigned int led_color, bool is_lit) {
+    /* 1. Deep counter-sunk mounting well */
+    vita2d_draw_fill_circle(cx, cy, 6.0f, RGBA8(14, 16, 22, 255));
+    vita2d_draw_fill_circle(cx, cy, 4.5f, RGBA8(8, 10, 14, 255));
+
+    if (is_lit) {
+        /* Multi-layer radiant bloom glow */
+        vita2d_draw_fill_circle(cx, cy, 14.0f, (led_color & 0x00FFFFFF) | 0x18000000);
+        vita2d_draw_fill_circle(cx, cy, 9.5f, (led_color & 0x00FFFFFF) | 0x38000000);
+        vita2d_draw_fill_circle(cx, cy, 6.0f, (led_color & 0x00FFFFFF) | 0x65000000);
+
+        /* Glowing LED bulb core */
+        vita2d_draw_fill_circle(cx, cy, 3.8f, led_color);
+        /* Specular bulb glint */
+        vita2d_draw_fill_circle(cx - 1.0f, cy - 1.0f, 1.5f, RGBA8(255, 255, 255, 220));
+    } else {
+        /* Dark unlit acrylic bead with subtle specular catch */
+        vita2d_draw_fill_circle(cx, cy, 3.5f, RGBA8(36, 42, 52, 255));
+        vita2d_draw_fill_circle(cx - 1.0f, cy - 1.0f, 1.0f, RGBA8(140, 150, 165, 180));
+    }
+}
+
+static void draw_acoustic_grille(float cx, float cy, float spacing) {
+    /* 7-Hole Acoustic Perforation Matrix (Dieter Rams / Image 2 style) */
+    const float offsets[7][2] = {
+        { 0.0f, 0.0f },
+        { 0.0f, -spacing },
+        { 0.0f,  spacing },
+        { -spacing * 0.866f, -spacing * 0.5f },
+        { -spacing * 0.866f,  spacing * 0.5f },
+        {  spacing * 0.866f, -spacing * 0.5f },
+        {  spacing * 0.866f,  spacing * 0.5f },
+    };
+
+    for (int i = 0; i < 7; i++) {
+        float hx = cx + offsets[i][0];
+        float hy = cy + offsets[i][1];
+
+        /* Dark hole interior */
+        vita2d_draw_fill_circle(hx, hy, 2.5f, RGBA8(12, 14, 18, 255));
+        /* Bottom specular rim reflection */
+        vita2d_draw_line(hx - 2.0f, hy + 2.0f, hx + 2.0f, hy + 2.0f, RGBA8(255, 255, 255, 50));
+    }
+}
+
+static void draw_rotary_volume_knob(float cx, float cy, float radius, int volume_percent, const AppTheme *theme) {
+    /* 1. Recessed circular well with inner shadow */
+    vita2d_draw_fill_circle(cx, cy, radius + 4.0f, RGBA8(14, 16, 22, 255));
+    vita2d_draw_fill_circle(cx, cy, radius + 3.0f, RGBA8(22, 26, 34, 255));
+
+    /* 2. Drop shadow under the raised turned metal knob */
+    vita2d_draw_fill_circle(cx + 1.5f, cy + 3.0f, radius, RGBA8(0, 0, 0, 75));
+
+    /* 3. Outer turned metallic bezel rim */
+    vita2d_draw_fill_circle(cx, cy, radius, RGBA8(185, 192, 205, 255));
+    vita2d_draw_fill_circle(cx, cy, radius - 1.5f, RGBA8(80, 86, 98, 255));
+
+    /* 4. Cylindrical knob face with vertical gradient */
+    unsigned int knob_top = RGBA8(68, 74, 88, 255);
+    unsigned int knob_bot = RGBA8(38, 42, 52, 255);
+    vita2d_draw_fill_circle(cx, cy, radius - 2.5f, knob_bot);
+    vita2d_draw_fill_circle(cx, cy - 1.0f, radius - 3.5f, knob_top);
+    vita2d_draw_fill_circle(cx, cy, radius - 4.5f, knob_bot);
+
+    /* 5. Turned concentric micro-grooves */
+    vita2d_draw_fill_circle(cx, cy, radius * 0.75f, RGBA8(55, 60, 72, 255));
+    vita2d_draw_fill_circle(cx, cy, radius * 0.70f, RGBA8(44, 48, 58, 255));
+
+    /* 6. Glowing Indicator Notch (0% -> -135 deg, 100% -> +135 deg) */
+    float norm_vol = (float)volume_percent / 100.0f;
+    if (norm_vol < 0.0f) norm_vol = 0.0f;
+    if (norm_vol > 1.0f) norm_vol = 1.0f;
+
+    float angle_deg = -135.0f + norm_vol * 270.0f;
+    float rad = (angle_deg - 90.0f) * (3.14159265f / 180.0f);
+    float cos_a = cosf(rad);
+    float sin_a = sinf(rad);
+
+    float p1_x = cx + cos_a * (radius * 0.35f);
+    float p1_y = cy + sin_a * (radius * 0.35f);
+    float p2_x = cx + cos_a * (radius * 0.85f);
+    float p2_y = cy + sin_a * (radius * 0.85f);
+
+    /* Radiant illuminated notch */
+    vita2d_draw_line(p1_x, p1_y, p2_x, p2_y, theme->btn_active_led);
+    float px = -sin_a * 1.0f;
+    float py = cos_a * 1.0f;
+    vita2d_draw_line(p1_x + px, p1_y + py, p2_x + px, p2_y + py, theme->btn_active_led);
+    vita2d_draw_line(p1_x - px, p1_y - py, p2_x - px, p2_y - py, (theme->btn_active_led & 0x00FFFFFF) | 0x88000000);
+
+    /* Tiny bright tip dot */
+    vita2d_draw_fill_circle(p2_x, p2_y, 1.5f, RGBA8(255, 255, 255, 230));
 }
 
 static void draw_triangle_right(float x, float y, float w, float h, unsigned int c) {
@@ -554,16 +756,21 @@ static void draw_icon_repeat(float cx, float cy, float size, bool is_track, unsi
 }
 
 static void draw_icon_theme(float cx, float cy, float size, unsigned int fill_c, unsigned int inner_c) {
-    /* Walkman distinctive concentric circular button recess */
+    /* 3D concentric tactile button */
+    vita2d_draw_fill_circle(cx, cy + 1.0f, size * 0.48f, RGBA8(0, 0, 0, 80)); /* drop shadow */
     vita2d_draw_fill_circle(cx, cy, size * 0.46f, inner_c);
-    vita2d_draw_fill_circle(cx, cy, size * 0.30f, fill_c);
-    vita2d_draw_fill_circle(cx, cy, size * 0.14f, inner_c);
+    vita2d_draw_fill_circle(cx, cy, size * 0.34f, fill_c);
+    vita2d_draw_fill_circle(cx - 1.0f, cy - 1.0f, size * 0.20f, color_tint(fill_c, 1.30f)); /* top specular */
+    vita2d_draw_fill_circle(cx, cy, size * 0.12f, inner_c);
 }
 
 static void draw_screw(float x, float y) {
-    vita2d_draw_fill_circle(x, y, 6, RGBA8(170, 175, 185, 255));
-    vita2d_draw_fill_circle(x, y, 4, RGBA8(140, 145, 155, 255));
-    vita2d_draw_line(x - 4, y, x + 4, y, RGBA8(70, 75, 85, 255));
+    /* Countersunk chassis screw with slot highlight */
+    vita2d_draw_fill_circle(x, y + 1.0f, 6.5f, RGBA8(0, 0, 0, 80));
+    vita2d_draw_fill_circle(x, y, 6.0f, RGBA8(180, 186, 196, 255));
+    vita2d_draw_fill_circle(x, y, 4.5f, RGBA8(130, 136, 148, 255));
+    vita2d_draw_line(x - 4, y, x + 4, y, RGBA8(50, 55, 65, 255));
+    vita2d_draw_line(x - 3, y - 1, x + 3, y - 1, RGBA8(220, 225, 235, 180));
 }
 
 static void draw_spool(float cx, float cy, float outer_radius, float angle_deg, bool is_leader, const AppTheme *theme) {
@@ -626,7 +833,10 @@ static void draw_spool(float cx, float cy, float outer_radius, float angle_deg, 
 static void draw_tape_counter(float kx, float ky, int counter_val, const AppTheme *theme) {
     float kw = 52.0f;
     float kh = 32.0f;
-    draw_beveled_box(kx, ky, kw, kh, RGBA8(10, 12, 16, 255), theme->border_dark, theme->border_light);
+
+    /* 3D Odometer Frame with drop shadow */
+    vita2d_draw_rectangle(kx + 1, ky + kh, kw, 2.0f, RGBA8(0, 0, 0, 75));
+    draw_skeuomorphic_panel(kx, ky, kw, kh, RGBA8(14, 16, 22, 255), true);
 
     if (s_font) {
         /* "COUNTER" label above with increased legibility */
@@ -635,10 +845,13 @@ static void draw_tape_counter(float kx, float ky, int counter_val, const AppThem
         char c_buf[8];
         snprintf(c_buf, sizeof(c_buf), "%03d", counter_val % 1000);
 
-        /* 3 rotary digit slots */
+        /* 3 rotary digit slots with cylindrical odometer bevels */
         for (int i = 0; i < 3; i++) {
             float wx = kx + 3.0f + i * 15.0f;
+            /* Rotating wheel groove */
             vita2d_draw_rectangle(wx, ky + 4.0f, 14.0f, 24.0f, RGBA8(22, 25, 32, 255));
+            vita2d_draw_line(wx, ky + 4.0f, wx + 13.0f, ky + 4.0f, RGBA8(8, 10, 14, 255)); /* top wheel shadow */
+            vita2d_draw_line(wx, ky + 27.0f, wx + 13.0f, ky + 27.0f, RGBA8(8, 10, 14, 255)); /* bottom wheel shadow */
             vita2d_draw_line(wx, ky + 4.0f, wx, ky + 28.0f, RGBA8(40, 45, 55, 255));
             vita2d_draw_line(wx + 13.0f, ky + 4.0f, wx + 13.0f, ky + 28.0f, RGBA8(5, 7, 10, 255));
 
@@ -647,16 +860,21 @@ static void draw_tape_counter(float kx, float ky, int counter_val, const AppThem
             vita2d_pgf_draw_text(s_font, (int)(wx + (14.0f - dw) * 0.5f), (int)(ky + 23.0f), RGBA8(240, 242, 245, 255), 0.85f, d_str);
         }
 
-        /* Miniature reset push-button */
-        vita2d_draw_fill_circle(kx + kw + 5.0f, ky + kh * 0.5f, 3.0f, RGBA8(230, 235, 240, 255));
-        vita2d_draw_fill_circle(kx + kw + 5.0f, ky + kh * 0.5f, 1.5f, RGBA8(180, 185, 190, 255));
+        /* 3D cylindrical reset push-button */
+        float rx = kx + kw + 5.0f;
+        float ry = ky + kh * 0.5f;
+        vita2d_draw_fill_circle(rx + 0.5f, ry + 1.0f, 3.5f, RGBA8(0, 0, 0, 80));
+        vita2d_draw_fill_circle(rx, ry, 3.0f, RGBA8(210, 215, 225, 255));
+        vita2d_draw_fill_circle(rx - 0.5f, ry - 0.5f, 1.5f, RGBA8(255, 255, 255, 220));
     }
 }
 
 static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase, const AppTheme *theme) {
     float vw = 50.0f;
     float vh = 100.0f;
-    draw_beveled_box(vx, vy, vw, vh, RGBA8(12, 14, 18, 255), theme->border_dark, theme->border_light);
+
+    /* 3D Sunken VU well */
+    draw_skeuomorphic_panel(vx, vy, vw, vh, RGBA8(12, 14, 18, 255), true);
 
     if (s_font) {
         vita2d_pgf_draw_text(s_font, (int)(vx + 2), (int)(vy - 6), theme->text_muted, 0.65f, "LEVEL dB");
@@ -673,7 +891,7 @@ static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase
         lit_r = 1 + (int)(s2 * 4.99f);
     }
 
-    /* 6 horizontal LED bars per channel */
+    /* 6 horizontal LED bars per channel with beveled bezels and glowing bloom */
     for (int i = 0; i < 6; i++) {
         float bar_y = vy + 81.0f - i * 11.5f;
         unsigned int col_active;
@@ -690,8 +908,21 @@ static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase
             col_inactive = RGBA8(55, 12, 12, 255);
         }
 
-        vita2d_draw_rectangle(vx + 6.0f, bar_y, 16.0f, 7.5f, (i < lit_l) ? col_active : col_inactive);
-        vita2d_draw_rectangle(vx + 28.0f, bar_y, 16.0f, 7.5f, (i < lit_r) ? col_active : col_inactive);
+        /* Left channel bar */
+        bool left_lit = (i < lit_l);
+        unsigned int cl = left_lit ? col_active : col_inactive;
+        vita2d_draw_rectangle(vx + 6.0f, bar_y, 16.0f, 7.5f, cl);
+        if (left_lit) {
+            vita2d_draw_line(vx + 6.0f, bar_y, vx + 21.0f, bar_y, RGBA8(255, 255, 255, 130)); /* highlight */
+        }
+
+        /* Right channel bar */
+        bool right_lit = (i < lit_r);
+        unsigned int cr = right_lit ? col_active : col_inactive;
+        vita2d_draw_rectangle(vx + 28.0f, bar_y, 16.0f, 7.5f, cr);
+        if (right_lit) {
+            vita2d_draw_line(vx + 28.0f, bar_y, vx + 43.0f, bar_y, RGBA8(255, 255, 255, 130)); /* highlight */
+        }
     }
 }
 
@@ -706,29 +937,33 @@ static void draw_battery_indicator(float bx, float by, const AppTheme *theme) {
     is_low = (scePowerIsLowBattery() == 1);
 #endif
 
-    float bw = 26.0f;
+    float bw = 28.0f;
     float bh = 14.0f;
     float x = bx - bw * 0.5f;
     float y = by - bh * 0.5f;
 
-    /* 1. Outer Battery Casing */
-    vita2d_draw_rectangle(x, y, bw, bh, theme->border_light);
-    vita2d_draw_rectangle(x + 1.0f, y + 1.0f, bw - 2.0f, bh - 2.0f, RGBA8(12, 14, 18, 255));
+    /* 1. Outer brushed metallic battery casing with drop shadow */
+    vita2d_draw_rectangle(x + 1, y + bh, bw, 2.0f, RGBA8(0, 0, 0, 50));
+    vita2d_draw_rectangle(x, y, bw, bh, RGBA8(180, 186, 196, 255));
+    vita2d_draw_line(x, y, x + bw, y, RGBA8(240, 245, 255, 255));
+    vita2d_draw_line(x, y + bh - 1, x + bw, y + bh - 1, RGBA8(80, 85, 95, 255));
 
     /* 2. Positive Terminal Nub on Right */
-    vita2d_draw_rectangle(x + bw, by - 2.5f, 2.5f, 5.0f, theme->border_light);
+    vita2d_draw_rectangle(x + bw, by - 3.0f, 3.0f, 6.0f, RGBA8(210, 215, 225, 255));
+    vita2d_draw_line(x + bw, by - 3.0f, x + bw + 3.0f, by - 3.0f, RGBA8(255, 255, 255, 220));
 
-    /* 3. Fill Level */
+    /* 3. Deep inner cavity */
     float inner_x = x + 2.0f;
     float inner_y = y + 2.0f;
-    float inner_w = bw - 4.0f; /* 22.0f */
-    float inner_h = bh - 4.0f; /* 10.0f */
+    float inner_w = bw - 4.0f;
+    float inner_h = bh - 4.0f;
+    vita2d_draw_rectangle(inner_x, inner_y, inner_w, inner_h, RGBA8(14, 16, 22, 255));
 
     unsigned int fill_col = theme->btn_active_led;
     if (is_charging) {
-        fill_col = RGBA8(255, 195, 25, 255); /* Amber / Charging Gold */
+        fill_col = RGBA8(255, 195, 25, 255);
     } else if (is_low || (bat_pct >= 0 && bat_pct <= 20)) {
-        fill_col = RGBA8(235, 45, 45, 255);  /* Warning Red */
+        fill_col = RGBA8(235, 45, 45, 255);
     }
 
     if (bat_pct >= 0) {
@@ -739,19 +974,19 @@ static void draw_battery_indicator(float bx, float by, const AppTheme *theme) {
         float cur_w = inner_w * ratio;
         if (cur_w > 1.0f) {
             vita2d_draw_rectangle(inner_x, inner_y, cur_w, inner_h, fill_col);
+            vita2d_draw_line(inner_x, inner_y + 1, inner_x + cur_w - 1, inner_y + 1, RGBA8(255, 255, 255, 90));
         }
 
-        /* 3 Segments divider lines for authentic retro LCD gauge look */
+        /* 3 Segments divider lines */
         for (int seg = 1; seg <= 2; seg++) {
             float div_x = inner_x + seg * (inner_w / 3.0f);
-            vita2d_draw_line(div_x, inner_y, div_x, inner_y + inner_h, RGBA8(12, 14, 18, 180));
+            vita2d_draw_line(div_x, inner_y, div_x, inner_y + inner_h, RGBA8(12, 14, 18, 190));
         }
     } else {
-        /* Running on AC Power (e.g. PSTV) */
         vita2d_draw_rectangle(inner_x, inner_y, inner_w, inner_h, theme->btn_active_led);
     }
 
-    /* 4. Text Display (% or AC) with increased font size and spacing */
+    /* 4. Text Display (% or AC) */
     if (s_font) {
         char bat_str[16];
         if (bat_pct >= 0) {
@@ -779,60 +1014,62 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
     float tw = 928.0f;
     float th = 44.0f;
 
-    draw_beveled_box(tx, ty, tw, th, theme->border_dark, theme->border_light, theme->border_dark);
+    /* Skeuomorphic raised metallic plate with drop shadow */
+    draw_skeuomorphic_panel(tx, ty, tw, th, theme->border_dark, false);
 
-    /* Subtle brushed metal accent lines */
-    for (int y = (int)(ty + 4); y < (int)(ty + th - 4); y += 6) {
-        vita2d_draw_line(tx + 4, y, tx + tw - 4, y, (theme->border_light & 0x00FFFFFF) | 0x18000000);
+    /* Subtle brushed metal grain lines */
+    for (int y = (int)(ty + 4); y < (int)(ty + th - 4); y += 4) {
+        vita2d_draw_line(tx + 4, y, tx + tw - 4, y, (theme->border_light & 0x00FFFFFF) | 0x14000000);
     }
 
     if (s_font) {
-        /* Bold PSVITAMAN brand block */
+        /* Embossed PSVITAMAN brand block: micro-shadow beneath + bright embossed face */
+        vita2d_pgf_draw_text(s_font, (int)(tx + 17), (int)(ty + 30), RGBA8(0, 0, 0, 160), 1.05f, "PSVITAMAN");
         vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 29), theme->text_primary, 1.05f, "PSVITAMAN");
 
-        /* Model Stamp with ample margin */
+        /* Model Stamp */
         vita2d_pgf_draw_text(s_font, (int)(tx + 160), (int)(ty + 29), theme->text_accent, 0.78f, theme->model_stamp);
 
-        /* Spotify Device Name (clipped safely in center column, generous width) */
+        /* Spotify Device Name (in recessed capsule inset) */
         char dev_hud[128];
         snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
-        vita2d_set_clip_rectangle((int)(tx + 368), (int)(ty + 7), 235, 30);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 368), (int)(ty + 29), theme->text_muted, 0.78f, dev_hud);
+        float dev_box_x = tx + 355.0f;
+        float dev_box_w = 230.0f;
+        draw_beveled_box(dev_box_x, ty + 8.0f, dev_box_w, 28.0f, RGBA8(16, 20, 26, 255), RGBA8(8, 10, 14, 255), RGBA8(60, 68, 80, 255));
+        vita2d_set_clip_rectangle((int)dev_box_x + 6, (int)ty + 8, (int)dev_box_w - 12, 28);
+        vita2d_pgf_draw_text(s_font, (int)(dev_box_x + 8), (int)(ty + 28), theme->text_muted, 0.76f, dev_hud);
         vita2d_disable_clipping();
 
-        /* Volume Display with ample margin */
-        char vol_hud[32];
-        snprintf(vol_hud, sizeof(vol_hud), "VOL %d%%", state->volume_percent);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 620), (int)(ty + 29), theme->text_primary, 0.80f, vol_hud);
+        /* Acoustic Speaker Grille (7-hole matrix from Image 2) */
+        draw_acoustic_grille(tx + 616.0f, ty + 22.0f, 5.5f);
 
-        /* 5-Bar Volume Graphic */
-        int num_bars = (state->volume_percent * 5 + 50) / 100;
-        for (int b = 0; b < 5; b++) {
-            float bx = tx + 710 + b * 6.5f;
-            float bh = 4.0f + b * 2.5f;
-            unsigned int bc = (b < num_bars) ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
-            vita2d_draw_rectangle(bx, ty + 27.0f - bh, 4.5f, bh, bc);
-        }
+        /* 3D Rotary Volume Knob (Dieter Rams / Teenage Engineering / Image 2 style) */
+        draw_rotary_volume_knob(tx + 658.0f, ty + 22.0f, 13.0f, state->volume_percent, theme);
+
+        /* Volume Percentage readout */
+        char vol_hud[16];
+        snprintf(vol_hud, sizeof(vol_hud), "%d%%", state->volume_percent);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 680), (int)(ty + 28), theme->text_primary, 0.76f, vol_hud);
 
         /* Battery Indicator on Top Right */
         draw_battery_indicator(tx + tw - 58.0f, ty + 22.0f, theme);
 
-        /* Live Sync Pulse Dot */
-        unsigned int sync_c = is_syncing ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
-        vita2d_draw_fill_circle(tx + tw - 16, ty + 22, 4.0f, sync_c);
+        /* Jewel Sync LED with soft radiant bloom */
+        draw_skeuomorphic_led(tx + tw - 16.0f, ty + 22.0f, theme->btn_active_led, is_syncing);
     }
 }
 
 static void render_cassette_bay(const SpotifyPlaybackState *state, int interpolated_progress_ms, const AppTheme *theme, int ox, int oy) {
-    /* Single Clean Cassette Bay Panel with uniform 16px margins to screen edges */
+    /* Single Clean Cassette Bay Panel with uniform 16px margins */
     float cx = 16.0f + ox;
     float cy = 70.0f + oy;
     float cw = 928.0f;
     float ch = 352.0f;
 
-    draw_beveled_box(cx, cy, cw, ch, theme->cassette_shell, theme->border_light, theme->border_dark);
+    /* Skeuomorphic molded chassis panel with ambient drop shadow */
+    draw_skeuomorphic_panel(cx, cy, cw, ch, theme->cassette_shell, false);
 
-    /* 5 Outer Cassette Bay Screws */
+    /* 5 Outer Cassette Bay Screws with realistic slot highlight */
     draw_screw(cx + 12, cy + 12);
     draw_screw(cx + cw - 12, cy + 12);
     draw_screw(cx + 12, cy + ch - 12);
@@ -845,14 +1082,15 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     float lw = cw - 48.0f; /* 880.0f */
     float lh = 88.0f;
 
-    draw_beveled_box(lx, ly, lw, lh, theme->label_bg, RGBA8(255, 255, 255, 240), RGBA8(180, 175, 165, 255));
+    /* Skeuomorphic Paper Card with subtle recessed contact shadow */
+    draw_skeuomorphic_panel(lx, ly, lw, lh, theme->label_bg, false);
 
     /* Dual Racing Stripes across Label */
     vita2d_draw_rectangle(lx + 2, ly + 4, lw - 4, 3, theme->label_stripe_a);
     vita2d_draw_rectangle(lx + 2, ly + 7, lw - 4, 3, theme->label_stripe_b);
 
     if (s_font) {
-        /* Bold Boxed "A" */
+        /* Bold Boxed "A" with molded relief */
         draw_beveled_box(lx + 14, ly + 13, 22, 20, theme->label_stripe_a, RGBA8(255, 255, 255, 255), RGBA8(0, 0, 0, 255));
         vita2d_pgf_draw_text(s_font, (int)(lx + 19), (int)(ly + 29), RGBA8(255, 255, 255, 255), 0.85f, "A");
 
@@ -904,8 +1142,8 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     float ww = cw - 160.0f; /* 768.0f */
     float wh = 152.0f;
 
-    /* Deep Sunken Acrylic Window Cavity */
-    draw_beveled_box(wx, wy, ww, wh, theme->cassette_inner, theme->border_dark, theme->border_light);
+    /* Deep Sunken Acrylic Window Cavity (Skeuomorphic sunken well with inner shadow) */
+    draw_skeuomorphic_panel(wx, wy, ww, wh, theme->cassette_inner, true);
 
     /* Mechanical Tape Counter (Left of Window) - geared to right spool rotation */
     int counter_val = (int)(s_tape_counter_rotations * 1.5f + (float)interpolated_progress_ms * 0.001f * 0.8f) % 1000;
@@ -921,7 +1159,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy + 17), (theme->border_light & 0x00FFFFFF) | 0x99000000, 0.70f, auto_stop);
     }
 
-    /* Physics-inspired tape roll geometry (Conservation of Cross-Sectional Tape Area) */
+    /* Physics-inspired tape roll geometry */
     float progress_ratio = 0.0f;
     if (state->duration_ms > 0) {
         progress_ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
@@ -947,12 +1185,12 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     draw_spool(left_cx, spool_cy, left_radius, s_left_spool_angle, left_is_leader, theme);
     draw_spool(right_cx, spool_cy, right_radius, s_right_spool_angle, right_is_leader, theme);
 
-    /* Tangential Tape Ribbon Path: peeling from supply reel, across rollers, into take-up reel */
+    /* Tangential Tape Ribbon Path */
     float roller_y = spool_cy + 50.0f;
     float roller_L_x = left_cx - 38.0f;
     float roller_R_x = right_cx + 38.0f;
 
-    /* Left unspooling ribbon: peels tangentially from outer edge of supply reel */
+    /* Left unspooling ribbon */
     float peel_L_x = left_cx - left_radius + 3.0f;
     float peel_L_y = spool_cy + left_radius * 0.42f;
     for (int t = -2; t <= 2; t++) {
@@ -961,17 +1199,16 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
 
     /* Horizontal magnetic tape ribbon across capstan & playback head notch */
     vita2d_draw_rectangle(roller_L_x - 3.0f, roller_y - 3.0f, (roller_R_x - roller_L_x) + 6.0f, 6.0f, theme->tape_brown);
-    /* Specular oxide sheen line along tape run */
     vita2d_draw_line(roller_L_x, roller_y - 1.0f, roller_R_x, roller_y - 1.0f, (theme->tape_brown & 0x00FFFFFF) | 0x44000000);
 
-    /* Right intake ribbon: feeds tangentially into outer edge of take-up reel */
+    /* Right intake ribbon */
     float peel_R_x = right_cx + right_radius - 3.0f;
     float peel_R_y = spool_cy + right_radius * 0.42f;
     for (int t = -2; t <= 2; t++) {
         vita2d_draw_line(roller_R_x + t, roller_y - 2.0f, peel_R_x + t, peel_R_y, theme->tape_brown);
     }
 
-    /* Left & Right Flanged Tape Guide Rollers (drawn over ribbon for authentic mechanical wrap) */
+    /* Left & Right Flanged Tape Guide Rollers */
     vita2d_draw_fill_circle(roller_L_x, roller_y, 6.0f, RGBA8(195, 200, 210, 255));
     vita2d_draw_fill_circle(roller_L_x, roller_y, 3.5f, RGBA8(110, 115, 125, 255));
     vita2d_draw_fill_circle(roller_L_x, roller_y, 1.5f, RGBA8(240, 245, 250, 255));
@@ -980,7 +1217,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     vita2d_draw_fill_circle(roller_R_x, roller_y, 3.5f, RGBA8(110, 115, 125, 255));
     vita2d_draw_fill_circle(roller_R_x, roller_y, 1.5f, RGBA8(240, 245, 250, 255));
 
-    /* Tape Calibration Scale on window glass (communicates progress via tape radius) */
+    /* Tape Calibration Scale on window glass */
     float center_x = wx + ww * 0.5f;
     if (s_font) {
         vita2d_pgf_draw_text(s_font, (int)(center_x - 52), (int)(spool_cy - 27), (theme->border_light & 0x00FFFFFF) | 0xAA000000, 0.65f, "100  75  50  25   0");
@@ -998,7 +1235,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     vita2d_draw_line(wx + 25, wy + wh - 10, wx + 130, wy + 10, RGBA8(255, 255, 255, 20));
     vita2d_draw_line(wx + 27, wy + wh - 10, wx + 132, wy + 10, RGBA8(255, 255, 255, 30));
 
-    /* 2. Dynamic specular glare sweep across the glass (triggered on motion or timer) */
+    /* 2. Dynamic specular glare sweep across the glass */
     if (s_glare_active) {
         float glare_center_x = wx + ww * s_glare_progress;
         float tilt_dx = 90.0f;
@@ -1040,13 +1277,13 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     vita2d_draw_rectangle(tz_x + 100.0f, tz_y + 4.0f, tz_w - 200.0f, 14.0f, RGBA8(8, 10, 14, 255));
     vita2d_draw_rectangle(tz_x + 110.0f, tz_y + 8.0f, tz_w - 220.0f, 6.0f, theme->tape_brown);
 
-    /* Lower HUD Inset Strip (Progress communicates via tape; digital bar removed for clean layout) */
+    /* Lower HUD Inset Strip (Skeuomorphic smoked glass display) */
     float hx = cx + 24.0f;
     float hy = cy + 304.0f;
     float hw = cw - 48.0f; /* 880.0f */
     float hh = 32.0f;
 
-    draw_beveled_box(hx, hy, hw, hh, RGBA8(14, 16, 22, 255), theme->border_dark, theme->border_light);
+    draw_skeuomorphic_panel(hx, hy, hw, hh, RGBA8(12, 14, 18, 255), true);
 
     if (s_font) {
         char cur_time[16], total_time[16];
@@ -1069,12 +1306,14 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
 }
 
 static void render_transport_bar(const SpotifyPlaybackState *state, const InputState *input, const AppTheme *theme, int ox, int oy) {
-    /* Sunken mechanical button bay across the bottom of the device (uniform 16px margins) */
+    /* Sunken mechanical button bay trench across the bottom of the device (Image 1 & Image 2 style) */
     float bx_bay = 16.0f + ox;
     float by_bay = 432.0f + oy;
     float bw_bay = 928.0f;
     float bh_bay = 96.0f;
-    draw_beveled_box(bx_bay, by_bay, bw_bay, bh_bay, theme->border_dark, theme->border_dark, theme->border_light);
+
+    /* Skeuomorphic dark sunken keyboard well */
+    draw_skeuomorphic_panel(bx_bay, by_bay, bw_bay, bh_bay, RGBA8(18, 20, 26, 255), true);
 
     const DeckButtonRect *btns = input_get_button_rects();
 
@@ -1083,55 +1322,42 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         bool is_pressed = (input->pressed_button == i);
 
         float bx = b->x + ox;
-        float by = b->y + oy + (is_pressed ? 3 : 0);
+        float by = b->y + oy;
         float bw = b->w;
-        float bh = b->h - (is_pressed ? 2 : 0);
+        float bh = b->h;
 
         bool is_theme_btn = (i == BTN_INDEX_THEME);
-        unsigned int fill_color;
-        unsigned int hi_color;
-        unsigned int lo_color;
+        unsigned int key_color;
 
         if (is_theme_btn) {
-            fill_color = is_pressed ? theme->btn_theme_special_dark : theme->btn_theme_special;
-            hi_color = theme->border_light;
-            lo_color = theme->btn_theme_special_dark;
+            /* Hot Line Orange or striking accent key (like the red button in Image 2) */
+            key_color = theme->btn_theme_special;
         } else {
-            fill_color = is_pressed ? theme->btn_pressed : theme->btn_normal;
-            hi_color = is_pressed ? theme->btn_border_lo : theme->btn_border_hi;
-            lo_color = is_pressed ? theme->btn_border_hi : theme->btn_border_lo;
+            key_color = theme->btn_normal;
         }
 
-        draw_beveled_box(bx, by, bw, bh, fill_color, hi_color, lo_color);
+        /* Draw tactile cantilevered piano key with spherical finger-cup depression */
+        draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_theme_btn);
 
-        /* Indicator LED in top corner of togglable buttons */
+        /* Inset glowing jewel LED in active toggle buttons (Play, Shuffle, Repeat) */
         bool has_led = (i == BTN_INDEX_SHUFFLE || i == BTN_INDEX_REPEAT || i == BTN_INDEX_PLAY_PAUSE);
         bool is_active = false;
         if (i == BTN_INDEX_PLAY_PAUSE && state->is_playing) is_active = true;
         if (i == BTN_INDEX_SHUFFLE && state->shuffle_state) is_active = true;
         if (i == BTN_INDEX_REPEAT && state->repeat_state != REPEAT_OFF) is_active = true;
 
-        if (!is_theme_btn) {
-            /* Tactile piano-key horizontal ridges (cleanly terminate before LED) */
-            float ridge_end = has_led ? (bx + bw - 26) : (bx + bw - 14);
-            vita2d_draw_line(bx + 14, by + 7, ridge_end, by + 7, theme->btn_border_lo);
-            vita2d_draw_line(bx + 14, by + 8, ridge_end, by + 8, theme->btn_border_hi);
-            vita2d_draw_line(bx + 14, by + 11, ridge_end, by + 11, theme->btn_border_lo);
-            vita2d_draw_line(bx + 14, by + 12, ridge_end, by + 12, theme->btn_border_hi);
-        }
-
         if (has_led) {
-            unsigned int led_c = is_active ? theme->btn_active_led : RGBA8(45, 52, 62, 255);
-            vita2d_draw_fill_circle(bx + bw - 14, by + 10, 3.5f, led_c);
-            if (is_active) {
-                vita2d_draw_fill_circle(bx + bw - 14, by + 10, 5.5f, (led_c & 0x00FFFFFF) | 0x44000000);
-            }
+            float led_x = bx + bw - 15.0f;
+            float led_y = by + (is_pressed ? 13.0f : 11.0f);
+            draw_skeuomorphic_led(led_x, led_y, theme->btn_active_led, is_active);
         }
 
-        /* Center coordinates for icon */
+        /* Center coordinates for vector icon inside the concave finger cup */
         float icx = bx + bw * 0.5f;
-        float icy = by + 28.0f;
-        unsigned int icon_color = is_active ? theme->btn_active_led : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_primary);
+        float icy = by + (is_pressed ? 30.0f : 28.0f);
+        unsigned int icon_color = is_active
+            ? theme->btn_active_led
+            : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_primary);
 
         switch (i) {
             case BTN_INDEX_THEME:
@@ -1158,7 +1384,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                 break;
         }
 
-        /* Text label & hotkey hint below icon - separated with clean non-overlapping baselines */
+        /* Text label & hotkey hint below the concave cup */
         if (s_font) {
             const char *label_text = b->label;
             if (i == BTN_INDEX_PLAY_PAUSE) {
@@ -1171,16 +1397,23 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                 label_text = "HOT LINE";
             }
 
-            int tw = vita2d_pgf_text_width(s_font, 0.76f, label_text);
+            int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
             int tx = (int)(bx + (bw - tw) * 0.5f);
-            int ty = (int)(by + 56);
-            unsigned int tc = is_active ? theme->btn_active_led : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_muted);
-            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.76f, label_text);
+            int ty = (int)(by + (is_pressed ? 59 : 57));
+            unsigned int tc = is_active
+                ? theme->btn_active_led
+                : (is_theme_btn ? RGBA8(255, 255, 255, 240) : theme->text_muted);
 
-            int hw = vita2d_pgf_text_width(s_font, 0.60f, b->hotkey_hint);
+            /* Micro-emboss drop shadow on text */
+            if (!is_pressed) {
+                vita2d_pgf_draw_text(s_font, tx, ty + 1, RGBA8(0, 0, 0, 120), 0.74f, label_text);
+            }
+            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.74f, label_text);
+
+            int hw = vita2d_pgf_text_width(s_font, 0.58f, b->hotkey_hint);
             int hx = (int)(bx + (bw - hw) * 0.5f);
-            int hy = (int)(by + 74);
-            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 200), 0.60f, b->hotkey_hint);
+            int hy = (int)(by + (is_pressed ? 75 : 73));
+            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 180), 0.58f, b->hotkey_hint);
         }
     }
 }

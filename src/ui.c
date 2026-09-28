@@ -740,7 +740,6 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     float title_clip_x = gx + 28.0f;
     float title_clip_y = gy + 28.0f;
     float title_clip_w = gw - 42.0f;
-    float title_clip_h = 22.0f;
 
     int title_w = vita2d_pgf_text_width(s_font, 1.05f, title_buf);
     if (title_w > (int)title_clip_w) {
@@ -1342,6 +1341,7 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
         char dev_hud[128];
         snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
         float dev_box_x = tx + 355.0f;
+        float dev_box_w = 230.0f;
         draw_beveled_box(dev_box_x, ty + 8.0f, dev_box_w, 28.0f, RGBA8(16, 20, 26, 255), RGBA8(8, 10, 14, 255), RGBA8(60, 68, 80, 255));
         float max_dev_w = dev_box_w - 20.0f;
         int dev_len = (int)strlen(dev_hud);

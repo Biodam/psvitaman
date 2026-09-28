@@ -169,10 +169,10 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 5. **Resetting Pairing Cleanly**:
    - When a user presses **SELECT**, delete `ux0:data/psvitaman/config.ini`, zero the `AppConfig` struct, stop the worker, and start `http_server_start(8888, &config)`.
 
-6. **vita2d_set_clip_rectangle Coordinate Signature**:
-   - Signature is `vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max)`, NOT `(x, y, w, h)`.
-   - Passing `(x, y, w, h)` results in inverted/degenerate coordinates (`y_min > y_max`), which corrupts the SGX543 hardware stencil scissor registers and triggers an instant `"GPU driver detects GPU crash"`.
-   - **Rule**: Always use the helper `set_clip_rect(x, y, w, h)` which converts and clamps to `[x, y, x + w, y + h]`.
+6. **Do NOT Use `vita2d_set_clip_rectangle` (GPU Driver Crash)**:
+   - In `libvita2d`, `vita2d_set_clip_rectangle` draws full-screen rectangles manipulating the GPU stencil buffer, and `vita2d_disable_clipping()` fails to restore the GXM stencil function, permanently locking it to `SCE_GXM_STENCIL_FUNC_EQUAL`.
+   - Repeatedly calling it per frame corrupts the PowerVR SGX543 tile accelerator state and triggers `"GPU driver detects GPU crash"`.
+   - **Rule**: NEVER use `vita2d_set_clip_rectangle`. Always bound lines and glares analytically with math, and use retro character-stepping or string length fitting for text labels.
 
 ---
 

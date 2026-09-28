@@ -25,8 +25,6 @@ static void vita2d_clear_screen(void) {}
 static void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int c) { (void)x;(void)y;(void)w;(void)h;(void)c; }
 static void vita2d_draw_fill_circle(float x, float y, float r, unsigned int c) { (void)x;(void)y;(void)r;(void)c; }
 static void vita2d_draw_line(float x0, float y0, float x1, float y1, unsigned int c) { (void)x0;(void)y0;(void)x1;(void)y1;(void)c; }
-static void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max) { (void)x_min;(void)y_min;(void)x_max;(void)y_max; }
-static void vita2d_disable_clipping(void) {}
 static void vita2d_pgf_draw_text(vita2d_pgf *f, int x, int y, unsigned int c, float s, const char *t) { (void)f;(void)x;(void)y;(void)c;(void)s;(void)t; }
 static int vita2d_pgf_text_width(vita2d_pgf *f, float s, const char *t) { (void)f;(void)s; return (int)(strlen(t) * 10); }
 static int vita2d_pgf_text_height(vita2d_pgf *f, float s, const char *t) { (void)f;(void)s;(void)t; return 16; }
@@ -530,20 +528,6 @@ static inline unsigned int color_tint(unsigned int c, float factor) {
     return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
 }
 
-static inline void set_clip_rect(float x, float y, float w, float h) {
-    int x_min = (int)x;
-    int y_min = (int)y;
-    int x_max = (int)(x + w);
-    int y_max = (int)(y + h);
-    if (x_min < 0) x_min = 0;
-    if (y_min < 0) y_min = 0;
-    if (x_max > 960) x_max = 960;
-    if (y_max > 544) y_max = 544;
-    if (x_min < x_max && y_min < y_max) {
-        vita2d_set_clip_rectangle(x_min, y_min, x_max, y_max);
-    }
-}
-
 static void draw_beveled_box(float x, float y, float w, float h,
                              unsigned int bg, unsigned int border_hi, unsigned int border_lo) {
     vita2d_draw_rectangle(x, y, w, h, bg);
@@ -657,15 +641,34 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     vita2d_draw_line(gx, gy + gh - 1, gx + gw, gy + gh - 1, RGBA8(0, 0, 0, 80));
     vita2d_draw_line(gx + gw - 1, gy, gx + gw - 1, gy + gh, RGBA8(0, 0, 0, 80));
 
-    /* 7. Diagonal Specular Glass Reflection Sheen (Top-right corner lens flare) */
-    set_clip_rect(gx, gy, gw, gh);
+    /* 7. Diagonal Specular Glass Reflection Sheen (Top-right corner lens flare, analytically bounded) */
     for (int off = -18; off <= 18; off++) {
         float dist = fabsf((float)off);
         float alpha = (1.0f - dist / 18.0f) * 28.0f;
-        vita2d_draw_line(gx + gw - 90.0f + off, gy, gx + gw + off, gy + 90.0f, RGBA8(255, 255, 255, (unsigned int)alpha));
+        float x1 = gx + gw - 90.0f + off;
+        float y1 = gy;
+        float x2 = gx + gw + off;
+        float y2 = gy + 90.0f;
+        if (x2 > gx + gw - 1.0f) {
+            float d = x2 - (gx + gw - 1.0f);
+            x2 = gx + gw - 1.0f;
+            y2 -= d;
+        }
+        if (y2 > gy + gh - 1.0f) {
+            float d = y2 - (gy + gh - 1.0f);
+            y2 = gy + gh - 1.0f;
+            x2 -= d;
+        }
+        if (x1 < gx) {
+            float d = gx - x1;
+            x1 = gx;
+            y1 += d;
+        }
+        if (x1 < x2 && y1 < y2) {
+            vita2d_draw_line(x1, y1, x2, y2, RGBA8(255, 255, 255, (unsigned int)alpha));
+        }
     }
-    vita2d_draw_line(gx + gw - 90.0f, gy, gx + gw, gy + 90.0f, RGBA8(255, 255, 255, 60));
-    vita2d_disable_clipping();
+    vita2d_draw_line(gx + gw - 90.0f, gy, gx + gw - 1.0f, gy + 89.0f, RGBA8(255, 255, 255, 60));
 
     if (!s_font) return;
 
@@ -740,16 +743,25 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     float title_clip_h = 22.0f;
 
     int title_w = vita2d_pgf_text_width(s_font, 1.05f, title_buf);
-    set_clip_rect(title_clip_x, title_clip_y, title_clip_w, title_clip_h);
-    if (title_w > title_clip_w) {
-        float total_scroll = title_w + 80.0f;
-        float cur_x = title_clip_x - fmodf(s_marquee_offset, total_scroll);
-        vita2d_pgf_draw_text(s_font, (int)cur_x, (int)(title_clip_y + 18), ink, 1.05f, title_buf);
-        vita2d_pgf_draw_text(s_font, (int)(cur_x + total_scroll), (int)(title_clip_y + 18), ink, 1.05f, title_buf);
+    if (title_w > (int)title_clip_w) {
+        /* Retro character stepper across the matrix cells (classic Walkman LCD marquee) */
+        int len = (int)strlen(title_buf);
+        char display_buf[256];
+        int scroll_chars = (int)(s_marquee_offset / 16.0f);
+        int start_idx = scroll_chars % (len + 6);
+        if (start_idx < len) {
+            snprintf(display_buf, sizeof(display_buf), "%s   %s", title_buf + start_idx, title_buf);
+        } else {
+            snprintf(display_buf, sizeof(display_buf), "%s", title_buf);
+        }
+        int fit_len = (int)strlen(display_buf);
+        while (fit_len > 0 && vita2d_pgf_text_width(s_font, 1.05f, display_buf) > (int)title_clip_w) {
+            display_buf[--fit_len] = '\0';
+        }
+        vita2d_pgf_draw_text(s_font, (int)title_clip_x, (int)(title_clip_y + 18), ink, 1.05f, display_buf);
     } else {
         vita2d_pgf_draw_text(s_font, (int)title_clip_x, (int)(title_clip_y + 18), ink, 1.05f, title_buf);
     }
-    vita2d_disable_clipping();
 
     /* Row 3: Subtitle with Procedural 👤 Artist Icon on Left (Y: gy + 67) */
     draw_lcd_artist_icon(gx + 18.0f, gy + 64.0f, ink);
@@ -766,12 +778,12 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     }
 
     float sub_clip_x = gx + 28.0f;
-    float sub_clip_y = gy + 53.0f;
     float sub_clip_w = 420.0f;
-    float sub_clip_h = 20.0f;
-    set_clip_rect(sub_clip_x, sub_clip_y, sub_clip_w, sub_clip_h);
-    vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(sub_clip_y + 15), ink, 0.72f, sub_buf);
-    vita2d_disable_clipping();
+    int sub_len = (int)strlen(sub_buf);
+    while (sub_len > 0 && vita2d_pgf_text_width(s_font, 0.72f, sub_buf) > (int)sub_clip_w) {
+        sub_buf[--sub_len] = '\0';
+    }
+    vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(gy + 68), ink, 0.72f, sub_buf);
 
     /* Row 3 (Right): Retro Dashed / Segmented LCD Progress Bar */
     /* Modeled after Image 2: 2:38 [ - - - - - - - - ] 5:15 */
@@ -1330,11 +1342,13 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
         char dev_hud[128];
         snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
         float dev_box_x = tx + 355.0f;
-        float dev_box_w = 230.0f;
         draw_beveled_box(dev_box_x, ty + 8.0f, dev_box_w, 28.0f, RGBA8(16, 20, 26, 255), RGBA8(8, 10, 14, 255), RGBA8(60, 68, 80, 255));
-        set_clip_rect(dev_box_x + 6.0f, ty + 8.0f, dev_box_w - 12.0f, 28.0f);
+        float max_dev_w = dev_box_w - 20.0f;
+        int dev_len = (int)strlen(dev_hud);
+        while (dev_len > 0 && vita2d_pgf_text_width(s_font, 0.76f, dev_hud) > (int)max_dev_w) {
+            dev_hud[--dev_len] = '\0';
+        }
         vita2d_pgf_draw_text(s_font, (int)(dev_box_x + 8), (int)(ty + 28), theme->text_muted, 0.76f, dev_hud);
-        vita2d_disable_clipping();
 
         /* Acoustic Speaker Grille (7-hole matrix from Image 2) */
         draw_acoustic_grille(tx + 616.0f, ty + 22.0f, 5.5f);
@@ -1471,9 +1485,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         vita2d_draw_line(center_x - tick_len * 0.5f, mark_y, center_x + tick_len * 0.5f, mark_y, (theme->border_light & 0x00FFFFFF) | 0x88000000);
     }
 
-    /* Acrylic Window Glare / Glass Reflection System */
-    set_clip_rect(wx, wy, ww, wh);
-
+    /* Acrylic Window Glare / Glass Reflection System (Analytically bounded to window) */
     /* 1. Subtle static ambient acrylic reflections */
     vita2d_draw_line(wx + 25, wy + wh - 10, wx + 130, wy + 10, RGBA8(255, 255, 255, 20));
     vita2d_draw_line(wx + 27, wy + wh - 10, wx + 132, wy + 10, RGBA8(255, 255, 255, 30));
@@ -1489,19 +1501,45 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
             float factor = 1.0f - (dist / 26.0f);
             int alpha = (int)(factor * factor * 70.0f);
             if (alpha > 0) {
-                float x_bot = glare_center_x + bw - tilt_dx * 0.5f;
-                float x_top = glare_center_x + bw + tilt_dx * 0.5f;
-                vita2d_draw_line(x_bot, wy + wh, x_top, wy, RGBA8(255, 255, 255, (unsigned int)alpha));
+                float xb = glare_center_x + bw - tilt_dx * 0.5f;
+                float xt = glare_center_x + bw + tilt_dx * 0.5f;
+                float yb = wy + wh;
+                float yt = wy;
+                if ((xb < wx && xt < wx) || (xb > wx + ww && xt > wx + ww)) continue;
+                if (xb < wx) {
+                    float t = (wx - xb) / (xt - xb);
+                    xb = wx;
+                    yb = (wy + wh) - t * wh;
+                }
+                if (xt > wx + ww) {
+                    float t = (xt - (wx + ww)) / (xt - xb);
+                    xt = wx + ww;
+                    yt = wy + t * wh;
+                }
+                vita2d_draw_line(xb, yb, xt, yt, RGBA8(255, 255, 255, (unsigned int)alpha));
             }
         }
 
         /* Bright specular glint edge */
-        float x_bot_c = glare_center_x - tilt_dx * 0.5f;
-        float x_top_c = glare_center_x + tilt_dx * 0.5f;
-        vita2d_draw_line(x_bot_c, wy + wh, x_top_c, wy, RGBA8(255, 255, 255, 110));
-        vita2d_draw_line(x_bot_c + 1.0f, wy + wh, x_top_c + 1.0f, wy, RGBA8(255, 255, 255, 85));
+        float xbc = glare_center_x - tilt_dx * 0.5f;
+        float xtc = glare_center_x + tilt_dx * 0.5f;
+        float ybc = wy + wh;
+        float ytc = wy;
+        if (!((xbc < wx && xtc < wx) || (xbc > wx + ww && xtc > wx + ww))) {
+            if (xbc < wx) {
+                float t = (wx - xbc) / (xtc - xbc);
+                xbc = wx;
+                ybc = (wy + wh) - t * wh;
+            }
+            if (xtc > wx + ww) {
+                float t = (xtc - (wx + ww)) / (xtc - xbc);
+                xtc = wx + ww;
+                ytc = wy + t * wh;
+            }
+            vita2d_draw_line(xbc, ybc, xtc, ytc, RGBA8(255, 255, 255, 110));
+            vita2d_draw_line(xbc + 1.0f, ybc, xtc + 1.0f, ytc, RGBA8(255, 255, 255, 85));
+        }
     }
-    vita2d_disable_clipping();
 
     /* Cassette Head Trapezoid Notch */
     float tz_w = 400.0f;

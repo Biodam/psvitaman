@@ -49,7 +49,6 @@ int main(int argc, char *argv[]) {
     /* 2. Load System Modules */
     sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
     sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_MOTION);
 
     /* 3. Initialize SceNet Stack */
     SceNetInitParam net_param;
@@ -314,7 +313,6 @@ int main(int argc, char *argv[]) {
     vita2d_fini();
     sceNetCtlTerm();
     sceNetTerm();
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_MOTION);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
     sceKernelExitProcess(0);

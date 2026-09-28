@@ -350,13 +350,15 @@ static const int s_orbit_y[8] = { 0,  1,  0, -1, -2, -1,  0,  1 };
 
 /* Acrylic Glass Specular Reflection / Glare Animation State */
 static float s_glare_timer = 0.0f;
-static float s_next_glare_interval = 14.0f;
+static float s_next_glare_interval = 45.0f;
 static float s_glare_progress = -0.5f;
 static bool s_glare_active = false;
 static float s_glare_cooldown = 0.0f;
 static float s_prev_accel_x = 0.0f;
 static float s_prev_accel_y = 0.0f;
 static float s_prev_accel_z = 0.0f;
+static float s_gyro_glare_x = 0.5f;
+static float s_gyro_glare_tilt = 90.0f;
 static bool s_motion_initialized = false;
 
 bool ui_init(void) {
@@ -458,38 +460,49 @@ void ui_update(float delta_time, const SpotifyPlaybackState *state, int interpol
         s_shift_y = s_orbit_y[s_orbit_idx];
     }
 
-    /* 7. Glass Glare / Reflection Sweep Update */
+    /* 7. Glass Glare / Reflection System Update */
     if (s_glare_cooldown > 0.0f) {
         s_glare_cooldown -= delta_time;
     }
 
 #if defined(__psp2__) || defined(__VITA__)
-    if (s_motion_initialized && s_glare_cooldown <= 0.0f) {
+    if (s_motion_initialized) {
         SceMotionState mstate;
         if (sceMotionGetState(&mstate) >= 0) {
-            float mag_gyro = fabsf(mstate.angularVelocity.x) + fabsf(mstate.angularVelocity.y) + fabsf(mstate.angularVelocity.z);
-            float diff_accel = fabsf(mstate.acceleration.x - s_prev_accel_x) +
-                               fabsf(mstate.acceleration.y - s_prev_accel_y) +
-                               fabsf(mstate.acceleration.z - s_prev_accel_z);
+            /* 7a. Device tilt directly drives dynamic reflection position on the acrylic window */
+            float target_x = 0.5f + (mstate.acceleration.x * 0.50f);
+            if (target_x < 0.12f) target_x = 0.12f;
+            if (target_x > 0.88f) target_x = 0.88f;
+
+            s_gyro_glare_x += (target_x - s_gyro_glare_x) * 5.0f * delta_time;
+
+            float target_tilt = 90.0f + (mstate.acceleration.y * 25.0f);
+            s_gyro_glare_tilt += (target_tilt - s_gyro_glare_tilt) * 4.0f * delta_time;
+
+            /* 7b. Sudden vigorous motion triggers a graceful light sweep */
+            if (s_glare_cooldown <= 0.0f) {
+                float mag_gyro = fabsf(mstate.angularVelocity.x) + fabsf(mstate.angularVelocity.y) + fabsf(mstate.angularVelocity.z);
+                float diff_accel = fabsf(mstate.acceleration.x - s_prev_accel_x) +
+                                   fabsf(mstate.acceleration.y - s_prev_accel_y) +
+                                   fabsf(mstate.acceleration.z - s_prev_accel_z);
+                if (mag_gyro > 0.85f || diff_accel > 0.65f) {
+                    s_glare_active = true;
+                    s_glare_progress = -0.40f;
+                    s_glare_cooldown = 8.0f; /* Debounce so continuous motion doesn't spam */
+                }
+            }
             s_prev_accel_x = mstate.acceleration.x;
             s_prev_accel_y = mstate.acceleration.y;
             s_prev_accel_z = mstate.acceleration.z;
-
-            /* Device moved or tilted -> trigger reflection sweep across the glass */
-            if (mag_gyro > 0.65f || diff_accel > 0.45f) {
-                s_glare_active = true;
-                s_glare_progress = -0.40f;
-                s_glare_cooldown = 3.5f; /* Debounce so continuous motion doesn't spam */
-            }
         }
     }
 #endif
 
-    /* Ambient reflection occurs occasionally on random timer (14..26s) */
+    /* Ambient reflection occurs occasionally on random timer (45..85s) */
     s_glare_timer += delta_time;
     if (s_glare_timer >= s_next_glare_interval) {
         s_glare_timer = 0.0f;
-        s_next_glare_interval = 14.0f + ((float)(rand() % 120) / 10.0f);
+        s_next_glare_interval = 45.0f + ((float)(rand() % 400) / 10.0f);
         if (!s_glare_active) {
             s_glare_active = true;
             s_glare_progress = -0.40f;
@@ -727,9 +740,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     vita2d_pgf_draw_text(s_font, shuf_x, (int)(gy + 17), ghost_ink, 0.66f, shuf_str);
     vita2d_pgf_draw_text(s_font, shuf_x, (int)(gy + 17), shuf_col, 0.66f, shuf_str);
 
-    /* Row 2: Micro "NOW PLAYING:" header badge + Procedural ♫ + Track Title Marquee (Y: gy + 42) */
-    vita2d_pgf_draw_text(s_font, (int)(gx + 14), (int)(gy + 31), ink_dim, 0.52f, "NOW PLAYING:");
-
+    /* Row 2: Procedural ♫ + Track Title Marquee (Y: gy + 42) */
     /* Procedural ♫ Music Note Glyph */
     draw_lcd_note_icon(gx + 18.0f, gy + 42.0f, ink);
 
@@ -893,10 +904,10 @@ static void draw_skeuomorphic_key(float x, float y, float w, float h,
         vita2d_draw_line(x + w - 1, draw_y, x + w - 1, draw_y + draw_h, RGBA8(0, 0, 0, 120));
     }
 
-    /* 5. Tactile Spherical Concave Finger-Cup */
+    /* 5. Tactile Spherical Concave Finger-Cup (Centered on key body) */
     float cup_cx = x + w * 0.5f;
-    float cup_cy = draw_y + 27.0f;
-    float cup_r = 23.0f;
+    float cup_cy = draw_y + draw_h * 0.48f;
+    float cup_r = 27.0f;
 
     if (is_latched || is_pressed) {
         /* Illuminated ambient halo around the cup rim */
@@ -1184,7 +1195,6 @@ static void draw_vu_meters(float vx, float vy, bool is_playing, float anim_phase
     draw_skeuomorphic_panel(vx, vy, vw, vh, RGBA8(12, 14, 18, 255), true);
 
     if (s_font) {
-        vita2d_pgf_draw_text(s_font, (int)(vx + 2), (int)(vy - 6), theme->text_muted, 0.65f, "LEVEL dB");
         vita2d_pgf_draw_text(s_font, (int)(vx + 8), (int)(vy + 14), theme->text_muted, 0.60f, "L");
         vita2d_pgf_draw_text(s_font, (int)(vx + 30), (int)(vy + 14), theme->text_muted, 0.60f, "R");
     }
@@ -1337,19 +1347,6 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
         /* Model Stamp */
         vita2d_pgf_draw_text(s_font, (int)(tx + 160), (int)(ty + 29), theme->text_accent, 0.78f, theme->model_stamp);
 
-        /* Spotify Device Name (in recessed capsule inset) */
-        char dev_hud[128];
-        snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
-        float dev_box_x = tx + 355.0f;
-        float dev_box_w = 230.0f;
-        draw_beveled_box(dev_box_x, ty + 8.0f, dev_box_w, 28.0f, RGBA8(16, 20, 26, 255), RGBA8(8, 10, 14, 255), RGBA8(60, 68, 80, 255));
-        float max_dev_w = dev_box_w - 20.0f;
-        int dev_len = (int)strlen(dev_hud);
-        while (dev_len > 0 && vita2d_pgf_text_width(s_font, 0.76f, dev_hud) > (int)max_dev_w) {
-            dev_hud[--dev_len] = '\0';
-        }
-        vita2d_pgf_draw_text(s_font, (int)(dev_box_x + 8), (int)(ty + 28), theme->text_muted, 0.76f, dev_hud);
-
         /* Acoustic Speaker Grille (7-hole matrix from Image 2) */
         draw_acoustic_grille(tx + 616.0f, ty + 22.0f, 5.5f);
 
@@ -1486,11 +1483,51 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     }
 
     /* Acrylic Window Glare / Glass Reflection System (Analytically bounded to window) */
-    /* 1. Subtle static ambient acrylic reflections */
-    vita2d_draw_line(wx + 25, wy + wh - 10, wx + 130, wy + 10, RGBA8(255, 255, 255, 20));
-    vita2d_draw_line(wx + 27, wy + wh - 10, wx + 132, wy + 10, RGBA8(255, 255, 255, 30));
+    /* 1. Interactive specular reflection following device gyro / tilt */
+    float gyro_center_x = wx + ww * s_gyro_glare_x;
+    float gyro_tilt_dx = s_gyro_glare_tilt;
+    for (int bw = -20; bw <= 20; bw += 2) {
+        float dist = fabsf((float)bw);
+        float factor = 1.0f - (dist / 20.0f);
+        int alpha = (int)(factor * factor * 42.0f);
+        if (alpha > 0) {
+            float xb = gyro_center_x + bw - gyro_tilt_dx * 0.5f;
+            float xt = gyro_center_x + bw + gyro_tilt_dx * 0.5f;
+            float yb = wy + wh;
+            float yt = wy;
+            if ((xb < wx && xt < wx) || (xb > wx + ww && xt > wx + ww)) continue;
+            if (xb < wx) {
+                float t = (wx - xb) / (xt - xb);
+                xb = wx;
+                yb = (wy + wh) - t * wh;
+            }
+            if (xt > wx + ww) {
+                float t = (xt - (wx + ww)) / (xt - xb);
+                xt = wx + ww;
+                yt = wy + t * wh;
+            }
+            vita2d_draw_line(xb, yb, xt, yt, RGBA8(255, 255, 255, (unsigned int)alpha));
+        }
+    }
+    float g_xbc = gyro_center_x - gyro_tilt_dx * 0.5f;
+    float g_xtc = gyro_center_x + gyro_tilt_dx * 0.5f;
+    float g_ybc = wy + wh;
+    float g_ytc = wy;
+    if (!((g_xbc < wx && g_xtc < wx) || (g_xbc > wx + ww && g_xtc > wx + ww))) {
+        if (g_xbc < wx) {
+            float t = (wx - g_xbc) / (g_xtc - g_xbc);
+            g_xbc = wx;
+            g_ybc = (wy + wh) - t * wh;
+        }
+        if (g_xtc > wx + ww) {
+            float t = (g_xtc - (wx + ww)) / (g_xtc - g_xbc);
+            g_xtc = wx + ww;
+            g_ytc = wy + t * wh;
+        }
+        vita2d_draw_line(g_xbc, g_ybc, g_xtc, g_ytc, RGBA8(255, 255, 255, 65));
+    }
 
-    /* 2. Dynamic specular glare sweep across the glass */
+    /* 2. Occasional dynamic specular glare sweep across the glass */
     if (s_glare_active) {
         float glare_center_x = wx + ww * s_glare_progress;
         float tilt_dx = 90.0f;
@@ -1583,6 +1620,75 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     }
 }
 
+static void draw_vita_button_glyph(int btn_idx, float gx, float gy) {
+    if (btn_idx == BTN_INDEX_PREV || btn_idx == BTN_INDEX_NEXT) {
+        /* Shoulder Trigger Pill (L / R) */
+        float tw = 20.0f;
+        float th = 13.0f;
+        float tx = gx - 6.0f;
+        float ty = gy - 7.0f;
+
+        /* Drop shadow */
+        vita2d_draw_rectangle(tx, ty + 1.0f, tw, th, RGBA8(0, 0, 0, 90));
+        /* Beveled trigger body */
+        vita2d_draw_rectangle(tx, ty, tw, th - 1.0f, RGBA8(26, 30, 40, 255));
+        /* Subtle trigger highlight and lowlight */
+        vita2d_draw_line(tx, ty, tx + tw - 1.0f, ty, RGBA8(90, 105, 125, 255));
+        vita2d_draw_line(tx, ty, tx, ty + th - 1.0f, RGBA8(80, 95, 115, 255));
+        vita2d_draw_line(tx + tw - 1.0f, ty, tx + tw - 1.0f, ty + th - 1.0f, RGBA8(14, 18, 24, 255));
+        vita2d_draw_line(tx, ty + th - 1.0f, tx + tw, ty + th - 1.0f, RGBA8(14, 18, 24, 255));
+
+        if (s_font) {
+            const char *label = (btn_idx == BTN_INDEX_PREV) ? "L" : "R";
+            int w = vita2d_pgf_text_width(s_font, 0.58f, label);
+            vita2d_pgf_draw_text(s_font, (int)(tx + (tw - w) * 0.5f), (int)(ty + 9.5f), RGBA8(230, 235, 245, 230), 0.58f, label);
+        }
+    } else {
+        /* Circular PlayStation Face Button (X, O, Square, Triangle) */
+        float r = 7.5f;
+        /* Shadow */
+        vita2d_draw_fill_circle(gx, gy + 1.0f, r + 0.5f, RGBA8(0, 0, 0, 90));
+        /* Dark circular bezel */
+        vita2d_draw_fill_circle(gx, gy, r, RGBA8(22, 26, 34, 255));
+        vita2d_draw_fill_circle(gx, gy, r - 1.0f, RGBA8(32, 38, 48, 255));
+        /* Inner face highlight */
+        vita2d_draw_line(gx - r * 0.5f, gy - r + 1.5f, gx + r * 0.5f, gy - r + 1.5f, RGBA8(255, 255, 255, 45));
+
+        switch (btn_idx) {
+            case BTN_INDEX_PLAY: { /* Cross (X) - PlayStation Blue */
+                unsigned int c = RGBA8(85, 155, 255, 255);
+                vita2d_draw_line(gx - 3.2f, gy - 3.2f, gx + 3.2f, gy + 3.2f, c);
+                vita2d_draw_line(gx - 3.2f + 0.7f, gy - 3.2f, gx + 3.2f + 0.7f, gy + 3.2f, c);
+                vita2d_draw_line(gx - 3.2f, gy + 3.2f, gx + 3.2f, gy - 3.2f, c);
+                vita2d_draw_line(gx - 3.2f + 0.7f, gy + 3.2f, gx + 3.2f + 0.7f, gy - 3.2f, c);
+                break;
+            }
+            case BTN_INDEX_PAUSE: { /* Circle (O) - PlayStation Red */
+                unsigned int c = RGBA8(255, 80, 80, 255);
+                vita2d_draw_fill_circle(gx, gy, 4.3f, c);
+                vita2d_draw_fill_circle(gx, gy, 2.7f, RGBA8(32, 38, 48, 255));
+                break;
+            }
+            case BTN_INDEX_SHUFFLE: { /* Square - PlayStation Pink */
+                unsigned int c = RGBA8(255, 115, 185, 255);
+                vita2d_draw_rectangle(gx - 3.5f, gy - 3.5f, 7.0f, 7.0f, c);
+                vita2d_draw_rectangle(gx - 2.0f, gy - 2.0f, 4.0f, 4.0f, RGBA8(32, 38, 48, 255));
+                break;
+            }
+            case BTN_INDEX_REPEAT: { /* Triangle - PlayStation Green */
+                unsigned int c = RGBA8(50, 220, 130, 255);
+                vita2d_draw_line(gx, gy - 4.2f, gx - 4.0f, gy + 3.5f, c);
+                vita2d_draw_line(gx, gy - 4.2f, gx + 4.0f, gy + 3.5f, c);
+                vita2d_draw_line(gx - 4.0f, gy + 3.5f, gx + 4.0f, gy + 3.5f, c);
+                vita2d_draw_line(gx, gy - 3.2f, gx - 3.0f, gy + 2.5f, c);
+                vita2d_draw_line(gx, gy - 3.2f, gx + 3.0f, gy + 2.5f, c);
+                vita2d_draw_line(gx - 3.0f, gy + 2.5f, gx + 3.0f, gy + 2.5f, c);
+                break;
+            }
+        }
+    }
+}
+
 static void render_transport_bar(const SpotifyPlaybackState *state, const InputState *input, const AppTheme *theme, int ox, int oy) {
     /* Sunken mechanical button bay trench across the bottom of the device (Image 1 & Image 2 style) */
     float bx_bay = 16.0f + ox;
@@ -1633,59 +1739,36 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
             draw_skeuomorphic_led(led_x, led_y, theme->btn_active_led, is_active);
         }
 
-        /* Center coordinates for vector icon inside the concave finger cup */
+        /* Centralized coordinates for 20% enlarged vector icon inside the concave finger cup */
         float icx = bx + bw * 0.5f;
-        float icy = by + y_disp + 28.0f;
+        float icy = by + y_disp + bh * 0.48f;
         unsigned int icon_color = is_active ? theme->btn_active_led : theme->text_primary;
 
         switch (i) {
             case BTN_INDEX_PLAY:
-                draw_icon_play(icx, icy, 20.0f, icon_color);
+                draw_icon_play(icx, icy, 24.0f, icon_color);
                 break;
             case BTN_INDEX_PAUSE:
-                draw_icon_pause(icx, icy, 18.0f, 18.0f, icon_color);
+                draw_icon_pause(icx, icy, 22.0f, 22.0f, icon_color);
                 break;
             case BTN_INDEX_PREV:
-                draw_icon_prev(icx, icy, 20.0f, icon_color);
+                draw_icon_prev(icx, icy, 24.0f, icon_color);
                 break;
             case BTN_INDEX_NEXT:
-                draw_icon_next(icx, icy, 20.0f, icon_color);
+                draw_icon_next(icx, icy, 24.0f, icon_color);
                 break;
             case BTN_INDEX_SHUFFLE:
-                draw_icon_shuffle(icx, icy, 20.0f, icon_color);
+                draw_icon_shuffle(icx, icy, 24.0f, icon_color);
                 break;
             case BTN_INDEX_REPEAT:
-                draw_icon_repeat(icx, icy, 20.0f, state->repeat_state == REPEAT_TRACK, icon_color);
+                draw_icon_repeat(icx, icy, 24.0f, state->repeat_state == REPEAT_TRACK, icon_color);
                 break;
         }
 
-        /* Text label & hotkey hint below the concave cup (rides smoothly with physical key displacement) */
-        if (s_font) {
-            const char *label_text = b->label;
-            if (i == BTN_INDEX_REPEAT) {
-                if (state->repeat_state == REPEAT_TRACK) label_text = "REP 1";
-                else if (state->repeat_state == REPEAT_CONTEXT) label_text = "REPEAT";
-                else label_text = "REP OFF";
-            }
-
-            int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
-            int tx = (int)(bx + (bw - tw) * 0.5f);
-            int ty = (int)(by + y_disp + 57.0f);
-            unsigned int tc = is_active ? theme->btn_active_led : theme->text_muted;
-
-            /* Embossed shadow on text: top inner shadow for sunken key, bottom drop shadow for raised key */
-            if (is_active || is_pressed) {
-                vita2d_pgf_draw_text(s_font, tx, ty - 1, RGBA8(0, 0, 0, 160), 0.70f, label_text);
-            } else {
-                vita2d_pgf_draw_text(s_font, tx, ty + 1, RGBA8(0, 0, 0, 120), 0.70f, label_text);
-            }
-            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.70f, label_text);
-
-            int hw = vita2d_pgf_text_width(s_font, 0.55f, b->hotkey_hint);
-            int hx = (int)(bx + (bw - hw) * 0.5f);
-            int hy = (int)(by + y_disp + 73.0f);
-            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 180), 0.55f, b->hotkey_hint);
-        }
+        /* PlayStation Vita button glyph in the bottom-left of each key */
+        float gx = bx + 16.0f;
+        float gy = by + y_disp + bh - 15.0f;
+        draw_vita_button_glyph(i, gx, gy);
     }
 }
 

@@ -25,7 +25,7 @@ static void vita2d_clear_screen(void) {}
 static void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int c) { (void)x;(void)y;(void)w;(void)h;(void)c; }
 static void vita2d_draw_fill_circle(float x, float y, float r, unsigned int c) { (void)x;(void)y;(void)r;(void)c; }
 static void vita2d_draw_line(float x0, float y0, float x1, float y1, unsigned int c) { (void)x0;(void)y0;(void)x1;(void)y1;(void)c; }
-static void vita2d_set_clip_rectangle(int x, int y, int w, int h) { (void)x;(void)y;(void)w;(void)h; }
+static void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max) { (void)x_min;(void)y_min;(void)x_max;(void)y_max; }
 static void vita2d_disable_clipping(void) {}
 static void vita2d_pgf_draw_text(vita2d_pgf *f, int x, int y, unsigned int c, float s, const char *t) { (void)f;(void)x;(void)y;(void)c;(void)s;(void)t; }
 static int vita2d_pgf_text_width(vita2d_pgf *f, float s, const char *t) { (void)f;(void)s; return (int)(strlen(t) * 10); }
@@ -530,6 +530,20 @@ static inline unsigned int color_tint(unsigned int c, float factor) {
     return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
 }
 
+static inline void set_clip_rect(float x, float y, float w, float h) {
+    int x_min = (int)x;
+    int y_min = (int)y;
+    int x_max = (int)(x + w);
+    int y_max = (int)(y + h);
+    if (x_min < 0) x_min = 0;
+    if (y_min < 0) y_min = 0;
+    if (x_max > 960) x_max = 960;
+    if (y_max > 544) y_max = 544;
+    if (x_min < x_max && y_min < y_max) {
+        vita2d_set_clip_rectangle(x_min, y_min, x_max, y_max);
+    }
+}
+
 static void draw_beveled_box(float x, float y, float w, float h,
                              unsigned int bg, unsigned int border_hi, unsigned int border_lo) {
     vita2d_draw_rectangle(x, y, w, h, bg);
@@ -644,7 +658,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     vita2d_draw_line(gx + gw - 1, gy, gx + gw - 1, gy + gh, RGBA8(0, 0, 0, 80));
 
     /* 7. Diagonal Specular Glass Reflection Sheen (Top-right corner lens flare) */
-    vita2d_set_clip_rectangle((int)gx, (int)gy, (int)gw, (int)gh);
+    set_clip_rect(gx, gy, gw, gh);
     for (int off = -18; off <= 18; off++) {
         float dist = fabsf((float)off);
         float alpha = (1.0f - dist / 18.0f) * 28.0f;
@@ -726,7 +740,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     float title_clip_h = 22.0f;
 
     int title_w = vita2d_pgf_text_width(s_font, 1.05f, title_buf);
-    vita2d_set_clip_rectangle((int)title_clip_x, (int)title_clip_y, (int)title_clip_w, (int)title_clip_h);
+    set_clip_rect(title_clip_x, title_clip_y, title_clip_w, title_clip_h);
     if (title_w > title_clip_w) {
         float total_scroll = title_w + 80.0f;
         float cur_x = title_clip_x - fmodf(s_marquee_offset, total_scroll);
@@ -755,7 +769,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     float sub_clip_y = gy + 53.0f;
     float sub_clip_w = 420.0f;
     float sub_clip_h = 20.0f;
-    vita2d_set_clip_rectangle((int)sub_clip_x, (int)sub_clip_y, (int)sub_clip_w, (int)sub_clip_h);
+    set_clip_rect(sub_clip_x, sub_clip_y, sub_clip_w, sub_clip_h);
     vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(sub_clip_y + 15), ink, 0.72f, sub_buf);
     vita2d_disable_clipping();
 
@@ -1318,7 +1332,7 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
         float dev_box_x = tx + 355.0f;
         float dev_box_w = 230.0f;
         draw_beveled_box(dev_box_x, ty + 8.0f, dev_box_w, 28.0f, RGBA8(16, 20, 26, 255), RGBA8(8, 10, 14, 255), RGBA8(60, 68, 80, 255));
-        vita2d_set_clip_rectangle((int)dev_box_x + 6, (int)ty + 8, (int)dev_box_w - 12, 28);
+        set_clip_rect(dev_box_x + 6.0f, ty + 8.0f, dev_box_w - 12.0f, 28.0f);
         vita2d_pgf_draw_text(s_font, (int)(dev_box_x + 8), (int)(ty + 28), theme->text_muted, 0.76f, dev_hud);
         vita2d_disable_clipping();
 
@@ -1458,7 +1472,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     }
 
     /* Acrylic Window Glare / Glass Reflection System */
-    vita2d_set_clip_rectangle((int)wx, (int)wy, (int)ww, (int)wh);
+    set_clip_rect(wx, wy, ww, wh);
 
     /* 1. Subtle static ambient acrylic reflections */
     vita2d_draw_line(wx + 25, wy + wh - 10, wx + 130, wy + 10, RGBA8(255, 255, 255, 20));

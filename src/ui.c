@@ -579,20 +579,40 @@ static void draw_skeuomorphic_panel(float x, float y, float w, float h,
     vita2d_draw_line(x + w - 2, y + 1, x + w - 2, y + h - 1, sunken ? color_tint(col_base, 1.15f) : RGBA8(0, 0, 0, 60));
 }
 
+static void draw_lcd_note_icon(float cx, float cy, unsigned int color) {
+    /* Procedural ♫ double eighth note glyph in liquid crystal ink */
+    vita2d_draw_fill_circle(cx - 3.5f, cy + 3.0f, 2.0f, color);
+    vita2d_draw_fill_circle(cx + 3.0f, cy + 1.5f, 2.0f, color);
+    vita2d_draw_rectangle(cx - 2.5f, cy - 4.5f, 1.5f, 7.5f, color);
+    vita2d_draw_rectangle(cx + 4.0f, cy - 6.0f, 1.5f, 7.5f, color);
+    vita2d_draw_line(cx - 2.5f, cy - 4.5f, cx + 5.0f, cy - 6.0f, color);
+    vita2d_draw_line(cx - 2.5f, cy - 3.5f, cx + 5.0f, cy - 5.0f, color);
+}
+
+static void draw_lcd_artist_icon(float cx, float cy, unsigned int color) {
+    /* Procedural 👤 artist bust glyph in liquid crystal ink */
+    vita2d_draw_fill_circle(cx, cy - 2.5f, 2.0f, color);
+    vita2d_draw_rectangle(cx - 3.5f, cy + 1.0f, 7.0f, 3.0f, color);
+}
+
 static void draw_retro_lcd_screen(float x, float y, float w, float h,
                                   const SpotifyPlaybackState *state,
                                   int interpolated_progress_ms,
                                   const AppTheme *theme) {
-    /* 1. Deep sunken molded bezel frame with directional shadow */
+    /* 1. Ambient Backlight Chassis Bleed Glow (Screen illuminates the dark housing) */
+    vita2d_draw_rectangle(x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, (theme->lcd_backlight & 0x00FFFFFF) | 0x14000000);
+    vita2d_draw_rectangle(x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f, (theme->lcd_backlight & 0x00FFFFFF) | 0x22000000);
+
+    /* 2. Deep sunken molded bezel frame with directional shadow */
     draw_skeuomorphic_panel(x, y, w, h, RGBA8(16, 18, 24, 255), true);
 
-    /* 2. Inset Backlit LCD Glass Panel */
+    /* 3. Inset Backlit LCD Glass Panel */
     float gx = x + 5.0f;
     float gy = y + 5.0f;
     float gw = w - 10.0f;
     float gh = h - 10.0f;
 
-    /* Fluorescent / LED edge-lit backlighting gradient */
+    /* Fluorescent / CCFL edge-lit backlighting gradient (diffuse glow with brighter center) */
     unsigned int bg_top = color_tint(theme->lcd_backlight, 1.08f);
     unsigned int bg_bot = color_tint(theme->lcd_backlight, 0.92f);
     float step = 2.0f;
@@ -602,85 +622,128 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
         vita2d_draw_rectangle(gx, gy + i * step, gw, step, color_lerp(bg_top, bg_bot, t));
     }
 
-    /* 3. Horizontal STN LCD electrode scanline micro-raster */
+    /* 4. Horizontal STN LCD electrode scanline micro-raster */
     for (float scan_y = gy + 1; scan_y < gy + gh - 1; scan_y += 2.0f) {
-        vita2d_draw_line(gx, scan_y, gx + gw, scan_y, RGBA8(0, 0, 0, 16));
+        vita2d_draw_line(gx, scan_y, gx + gw, scan_y, RGBA8(0, 0, 0, 14));
     }
 
-    /* 4. Inset glass rim specular highlights & inner bevel */
+    /* 5. Inset Chassis Lip Cast Shadow onto Glass (Top & Left depth) */
+    for (int s = 0; s < 5; s++) {
+        float alpha = (1.0f - (float)s / 5.0f) * 95.0f;
+        vita2d_draw_line(gx, gy + s, gx + gw, gy + s, RGBA8(0, 0, 0, (unsigned int)alpha));
+    }
+    for (int s = 0; s < 3; s++) {
+        float alpha = (1.0f - (float)s / 3.0f) * 75.0f;
+        vita2d_draw_line(gx + s, gy, gx + s, gy + gh, RGBA8(0, 0, 0, (unsigned int)alpha));
+    }
+
+    /* 6. Inset glass rim specular highlights & inner bevel */
     vita2d_draw_line(gx, gy, gx + gw, gy, RGBA8(255, 255, 255, 55));
     vita2d_draw_line(gx, gy, gx, gy + gh, RGBA8(255, 255, 255, 55));
-    vita2d_draw_line(gx, gy + gh - 1, gx + gw, gy + gh - 1, RGBA8(0, 0, 0, 75));
-    vita2d_draw_line(gx + gw - 1, gy, gx + gw - 1, gy + gh, RGBA8(0, 0, 0, 75));
+    vita2d_draw_line(gx, gy + gh - 1, gx + gw, gy + gh - 1, RGBA8(0, 0, 0, 80));
+    vita2d_draw_line(gx + gw - 1, gy, gx + gw - 1, gy + gh, RGBA8(0, 0, 0, 80));
 
-    /* 5. Diagonal Specular Glass Reflection Sheen (Top-right corner) */
+    /* 7. Diagonal Specular Glass Reflection Sheen (Top-right corner lens flare) */
     vita2d_set_clip_rectangle((int)gx, (int)gy, (int)gw, (int)gh);
-    for (int off = -16; off <= 16; off++) {
+    for (int off = -18; off <= 18; off++) {
         float dist = fabsf((float)off);
-        float alpha = (1.0f - dist / 16.0f) * 26.0f;
-        vita2d_draw_line(gx + gw - 85.0f + off, gy, gx + gw + off, gy + 85.0f, RGBA8(255, 255, 255, (unsigned int)alpha));
+        float alpha = (1.0f - dist / 18.0f) * 28.0f;
+        vita2d_draw_line(gx + gw - 90.0f + off, gy, gx + gw + off, gy + 90.0f, RGBA8(255, 255, 255, (unsigned int)alpha));
     }
+    vita2d_draw_line(gx + gw - 90.0f, gy, gx + gw, gy + 90.0f, RGBA8(255, 255, 255, 60));
     vita2d_disable_clipping();
 
     if (!s_font) return;
 
-    /* 6. Dynamic Information Layout on the LCD */
+    /* 8. Dynamic Information Layout on the LCD */
     unsigned int ink = theme->lcd_text;
     unsigned int ink_dim = theme->lcd_text_dim;
+    unsigned int ghost_ink = (ink_dim & 0x00FFFFFF) | 0x2A000000;
 
-    /* Row 1: Header Line (Y: gy + 18) */
-    /* 1a. Left Playback Status Badge */
-    const char *status_str = state->is_playing ? "PLAYING >>" : (state->duration_ms > 0 ? "PAUSED ||" : "IDLE --");
-    vita2d_pgf_draw_text(s_font, (int)(gx + 14), (int)(gy + 18), ink, 0.72f, status_str);
+    /* Row 1: Header Line (Y: gy + 17) */
+    /* 1a. Left Playback Status Badge with procedural glyph */
+    if (state->is_playing) {
+        /* Vector Play Triangle */
+        vita2d_draw_line(gx + 14, gy + 9, gx + 20, gy + 13, ink);
+        vita2d_draw_line(gx + 20, gy + 13, gx + 14, gy + 17, ink);
+        vita2d_draw_line(gx + 14, gy + 17, gx + 14, gy + 9, ink);
+        vita2d_pgf_draw_text(s_font, (int)(gx + 24), (int)(gy + 17), ink, 0.70f, "PLAYING");
+    } else if (state->duration_ms > 0) {
+        /* Vector Pause Bars */
+        vita2d_draw_rectangle(gx + 14, gy + 9, 2.5f, 8.0f, ink);
+        vita2d_draw_rectangle(gx + 18, gy + 9, 2.5f, 8.0f, ink);
+        vita2d_pgf_draw_text(s_font, (int)(gx + 24), (int)(gy + 17), ink, 0.70f, "PAUSED");
+    } else {
+        /* Vector Stop Square */
+        vita2d_draw_rectangle(gx + 14, gy + 9, 7.0f, 7.0f, ink_dim);
+        vita2d_pgf_draw_text(s_font, (int)(gx + 24), (int)(gy + 17), ink_dim, 0.70f, "STOPPED");
+    }
 
-    /* 1b. Center High-Precision Digital Timecode / Counter (with milliseconds) */
+    /* 1b. Center High-Precision Digital Timecode / Counter (with milliseconds & ghost background) */
     int total_sec = interpolated_progress_ms / 1000;
     int ms_part = interpolated_progress_ms % 1000;
     int mins = total_sec / 60;
     int secs = total_sec % 60;
     char timer_str[32];
     snprintf(timer_str, sizeof(timer_str), "%02d:%02d.%03d", mins, secs, ms_part);
-    int tw_tim = vita2d_pgf_text_width(s_font, 0.82f, timer_str);
-    vita2d_pgf_draw_text(s_font, (int)(gx + (gw - tw_tim) * 0.5f), (int)(gy + 18), ink, 0.82f, timer_str);
 
-    /* 1c. Right Badges: Shuffle & Repeat */
+    int tw_tim = vita2d_pgf_text_width(s_font, 0.82f, timer_str);
+    int timer_x = (int)(gx + (gw - tw_tim) * 0.5f);
+
+    /* Faint ghost unlit segments "88:88.888" beneath the active counter */
+    vita2d_pgf_draw_text(s_font, timer_x, (int)(gy + 17), ghost_ink, 0.82f, "88:88.888");
+    /* Crisp active digital digits */
+    vita2d_pgf_draw_text(s_font, timer_x, (int)(gy + 17), ink, 0.82f, timer_str);
+
+    /* 1c. Right Badges: Shuffle & Repeat with ghost segment templates */
     const char *rep_str = (state->repeat_state == REPEAT_TRACK) ? "[REP 1]" : ((state->repeat_state == REPEAT_CONTEXT) ? "[REP ALL]" : "[REP]");
-    unsigned int rep_col = (state->repeat_state != REPEAT_OFF) ? ink : ink_dim;
-    int rw = vita2d_pgf_text_width(s_font, 0.68f, rep_str);
-    vita2d_pgf_draw_text(s_font, (int)(gx + gw - rw - 14), (int)(gy + 18), rep_col, 0.68f, rep_str);
+    unsigned int rep_col = (state->repeat_state != REPEAT_OFF) ? ink : ghost_ink;
+    int rw = vita2d_pgf_text_width(s_font, 0.66f, "[REP ALL]");
+    int rep_x = (int)(gx + gw - rw - 14);
+    vita2d_pgf_draw_text(s_font, rep_x, (int)(gy + 17), ghost_ink, 0.66f, "[REP ALL]");
+    vita2d_pgf_draw_text(s_font, rep_x, (int)(gy + 17), rep_col, 0.66f, rep_str);
 
     const char *shuf_str = "[SHUF]";
-    unsigned int shuf_col = state->shuffle_state ? ink : ink_dim;
-    int sw = vita2d_pgf_text_width(s_font, 0.68f, shuf_str);
-    vita2d_pgf_draw_text(s_font, (int)(gx + gw - rw - sw - 24), (int)(gy + 18), shuf_col, 0.68f, shuf_str);
+    unsigned int shuf_col = state->shuffle_state ? ink : ghost_ink;
+    int sw = vita2d_pgf_text_width(s_font, 0.66f, shuf_str);
+    int shuf_x = rep_x - sw - 10;
+    vita2d_pgf_draw_text(s_font, shuf_x, (int)(gy + 17), ghost_ink, 0.66f, shuf_str);
+    vita2d_pgf_draw_text(s_font, shuf_x, (int)(gy + 17), shuf_col, 0.66f, shuf_str);
 
-    /* Row 2: Track Title Marquee (Y: gy + 43) */
+    /* Row 2: Micro "NOW PLAYING:" header badge + Procedural ♫ + Track Title Marquee (Y: gy + 42) */
+    vita2d_pgf_draw_text(s_font, (int)(gx + 14), (int)(gy + 31), ink_dim, 0.52f, "NOW PLAYING:");
+
+    /* Procedural ♫ Music Note Glyph */
+    draw_lcd_note_icon(gx + 18.0f, gy + 42.0f, ink);
+
     const char *track_title = (strlen(state->track_name) > 0) ? state->track_name : "Playback Idle / Stopped";
     char title_buf[600];
     snprintf(title_buf, sizeof(title_buf), "%s", track_title);
 
-    float title_clip_x = gx + 14.0f;
-    float title_clip_y = gy + 25.0f;
-    float title_clip_w = gw - 28.0f;
-    float title_clip_h = 24.0f;
+    float title_clip_x = gx + 28.0f;
+    float title_clip_y = gy + 28.0f;
+    float title_clip_w = gw - 42.0f;
+    float title_clip_h = 22.0f;
 
-    int title_w = vita2d_pgf_text_width(s_font, 1.08f, title_buf);
+    int title_w = vita2d_pgf_text_width(s_font, 1.05f, title_buf);
     vita2d_set_clip_rectangle((int)title_clip_x, (int)title_clip_y, (int)title_clip_w, (int)title_clip_h);
     if (title_w > title_clip_w) {
         float total_scroll = title_w + 80.0f;
         float cur_x = title_clip_x - fmodf(s_marquee_offset, total_scroll);
-        vita2d_pgf_draw_text(s_font, (int)cur_x, (int)(title_clip_y + 19), ink, 1.08f, title_buf);
-        vita2d_pgf_draw_text(s_font, (int)(cur_x + total_scroll), (int)(title_clip_y + 19), ink, 1.08f, title_buf);
+        vita2d_pgf_draw_text(s_font, (int)cur_x, (int)(title_clip_y + 18), ink, 1.05f, title_buf);
+        vita2d_pgf_draw_text(s_font, (int)(cur_x + total_scroll), (int)(title_clip_y + 18), ink, 1.05f, title_buf);
     } else {
-        vita2d_pgf_draw_text(s_font, (int)title_clip_x, (int)(title_clip_y + 19), ink, 1.08f, title_buf);
+        vita2d_pgf_draw_text(s_font, (int)title_clip_x, (int)(title_clip_y + 18), ink, 1.05f, title_buf);
     }
     vita2d_disable_clipping();
 
-    /* Row 3: Subtitle (Artist & Album) on Left (Y: gy + 67) */
+    /* Row 3: Subtitle with Procedural 👤 Artist Icon on Left (Y: gy + 67) */
+    draw_lcd_artist_icon(gx + 18.0f, gy + 64.0f, ink);
+
     char sub_buf[600] = {0};
     if (strlen(state->artist_name) > 0) {
         if (strlen(state->album_name) > 0) {
-            snprintf(sub_buf, sizeof(sub_buf), "%s  -  %s", state->artist_name, state->album_name);
+            snprintf(sub_buf, sizeof(sub_buf), "%s  •  %s", state->artist_name, state->album_name);
         } else {
             utils_safe_strncpy(sub_buf, state->artist_name, sizeof(sub_buf));
         }
@@ -688,12 +751,12 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
         utils_safe_strncpy(sub_buf, "Connect Spotify from Phone, PC, or Console", sizeof(sub_buf));
     }
 
-    float sub_clip_x = gx + 14.0f;
+    float sub_clip_x = gx + 28.0f;
     float sub_clip_y = gy + 53.0f;
-    float sub_clip_w = 460.0f;
+    float sub_clip_w = 420.0f;
     float sub_clip_h = 20.0f;
     vita2d_set_clip_rectangle((int)sub_clip_x, (int)sub_clip_y, (int)sub_clip_w, (int)sub_clip_h);
-    vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(sub_clip_y + 15), ink, 0.74f, sub_buf);
+    vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(sub_clip_y + 15), ink, 0.72f, sub_buf);
     vita2d_disable_clipping();
 
     /* Row 3 (Right): Retro Dashed / Segmented LCD Progress Bar */
@@ -703,19 +766,19 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
 
     float prog_area_r = gx + gw - 14.0f;
-    int tw_tot = vita2d_pgf_text_width(s_font, 0.70f, total_time);
-    vita2d_pgf_draw_text(s_font, (int)(prog_area_r - tw_tot), (int)(gy + 68), ink, 0.70f, total_time);
+    int tw_tot = vita2d_pgf_text_width(s_font, 0.68f, total_time);
+    vita2d_pgf_draw_text(s_font, (int)(prog_area_r - tw_tot), (int)(gy + 68), ink, 0.68f, total_time);
 
-    float seg_r = prog_area_r - tw_tot - 10.0f;
-    const int num_segments = 18;
-    const float seg_w = 12.0f;
-    const float seg_gap = 3.0f;
+    float seg_r = prog_area_r - tw_tot - 8.0f;
+    const int num_segments = 20;
+    const float seg_w = 10.5f;
+    const float seg_gap = 2.5f;
     const float seg_h = 5.0f;
     float total_seg_w = num_segments * seg_w + (num_segments - 1) * seg_gap;
     float seg_start_x = seg_r - total_seg_w;
 
-    int tw_cur = vita2d_pgf_text_width(s_font, 0.70f, cur_time);
-    vita2d_pgf_draw_text(s_font, (int)(seg_start_x - tw_cur - 10.0f), (int)(gy + 68), ink, 0.70f, cur_time);
+    int tw_cur = vita2d_pgf_text_width(s_font, 0.68f, cur_time);
+    vita2d_pgf_draw_text(s_font, (int)(seg_start_x - tw_cur - 8.0f), (int)(gy + 68), ink, 0.68f, cur_time);
 
     float ratio = 0.0f;
     if (state->duration_ms > 0) {
@@ -728,8 +791,14 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     float seg_y = gy + 61.0f;
     for (int s = 0; s < num_segments; s++) {
         float sx = seg_start_x + s * (seg_w + seg_gap);
-        unsigned int seg_col = (s < active_segs) ? ink : ink_dim;
-        vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, seg_col);
+        if (s < active_segs) {
+            /* Active illuminated segment with subtle top specular highlight */
+            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ink);
+            vita2d_draw_line(sx, seg_y, sx + seg_w - 1.0f, seg_y, color_tint(theme->lcd_backlight, 1.25f));
+        } else {
+            /* Ghost inactive unlit LCD segment */
+            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ghost_ink);
+        }
     }
 }
 

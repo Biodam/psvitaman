@@ -123,25 +123,25 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 |          Supply Reel     Calibration Ruler  Take-up Reel           |
 |                                                                    |
 |   02:45                   PLAYING >>                        03:30  |
-+--------------------------------------------------------------------+
-| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 432..528
-|  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |
-+--------------------------------------------------------------------+
++-------------------------------------------------------------------------------+
+| [THEME]  [PLAY]  [PAUSE]  [PREV]  [NEXT]  [SHUFFLE]  [REPEAT]                 |  Y: 432..528
+|  [< >]    [X]      [O]     [L]     [R]      [SQ]      [TRI]                   |
++-------------------------------------------------------------------------------+
 ```
 
 | Physical Button | Touchscreen Hitbox | Action |
 |---|---|---|
-| **Cross ($\times$)** | **PLAY / PAUSE** (Button 2) | Toggle Playback |
-| **L-Trigger** | **PREV** | Previous Track |
-| **R-Trigger** | **NEXT** | Skip Track |
-| **Square ($\square$)** | **SHUFFLE** | Toggle Shuffle |
-| **Triangle ($\triangle$)** | **REPEAT** | Cycle Repeat (Off / Context / Track) |
+| **Cross ($\times$)** | **PLAY** (Button 2) | Start / Resume Playback |
+| **Circle ($\bigcirc$)** | **PAUSE** (Button 3) | Pause Playback (also dismisses error/QR) |
+| **L-Trigger** | **PREV** (Button 4) | Previous Track |
+| **R-Trigger** | **NEXT** (Button 5) | Skip Track |
+| **Square ($\square$)** | **SHUFFLE** (Button 6) | Toggle Shuffle |
+| **Triangle ($\triangle$)** | **REPEAT** (Button 7) | Cycle Repeat (Off / Context / Track) |
 | **D-Pad Right** | **THEME** (Button 1, Far Left) | Next Theme |
 | **D-Pad Left** | — | Previous Theme |
 | **D-Pad Up / Down** | — | Volume $\pm 5\%$ |
 | **Select** | — | Reset Pairing / Clear Config / Enter Setup Mode |
 | **Start** | — | Force State Refresh (or reload config in Setup Mode) |
-| **Circle ($\bigcirc$)** | — | Dismiss Error Modal |
 
 ---
 

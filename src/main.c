@@ -190,7 +190,11 @@ int main(int argc, char *argv[]) {
             /* Only process playback buttons if modal overlay and error are not blocking */
             if (!show_qr_overlay && !has_error) {
                 if (input.pressed_buttons & SCE_CTRL_CROSS) {
-                    worker_enqueue_command(CMD_TOGGLE_PLAY_PAUSE);
+                    worker_enqueue_command(CMD_PLAY);
+                    sound_play(SOUND_CLACK);
+                }
+                if (input.pressed_buttons & SCE_CTRL_CIRCLE) {
+                    worker_enqueue_command(CMD_PAUSE);
                     sound_play(SOUND_CLACK);
                 }
                 if (input.pressed_buttons & SCE_CTRL_RTRIGGER) {

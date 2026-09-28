@@ -14,14 +14,15 @@ static uint32_t s_prev_buttons = 0;
 static bool s_prev_touch = false;
 static int s_touch_held_btn = -1;
 
-/* Deck Button Layout: 6 mechanical audio buttons across bottom (Y: 438..522, W: 140, H: 84) */
+/* Deck Button Layout: 7 mechanical audio buttons across bottom (Y: 438..522, W: 118, H: 84) */
 static const DeckButtonRect s_deck_buttons[DECK_BTN_COUNT] = {
-    {  30, 438, 140, 84, "THEME",   "[< >]" },
-    { 182, 438, 140, 84, "PLAY",    "[X]" },
-    { 334, 438, 140, 84, "PREV",    "[L]" },
-    { 486, 438, 140, 84, "NEXT",    "[R]" },
-    { 638, 438, 140, 84, "SHUFFLE", "[SQ]" },
-    { 790, 438, 140, 84, "REPEAT",  "[TRI]" }
+    {  31, 438, 118, 84, "THEME",   "[< >]" },
+    { 161, 438, 118, 84, "PLAY",    "[X]" },
+    { 291, 438, 118, 84, "PAUSE",   "[O]" },
+    { 421, 438, 118, 84, "PREV",    "[L]" },
+    { 551, 438, 118, 84, "NEXT",    "[R]" },
+    { 681, 438, 118, 84, "SHUFFLE", "[SQ]" },
+    { 811, 438, 118, 84, "REPEAT",  "[TRI]" }
 };
 
 const DeckButtonRect *input_get_button_rects(void) {
@@ -85,17 +86,20 @@ void input_poll(InputState *state) {
                     case BTN_INDEX_THEME:
                         state->pressed_buttons |= SCE_CTRL_RIGHT;
                         break;
-                    case BTN_INDEX_SHUFFLE:
-                        state->pressed_buttons |= SCE_CTRL_SQUARE;
+                    case BTN_INDEX_PLAY:
+                        state->pressed_buttons |= SCE_CTRL_CROSS;
+                        break;
+                    case BTN_INDEX_PAUSE:
+                        state->pressed_buttons |= SCE_CTRL_CIRCLE;
                         break;
                     case BTN_INDEX_PREV:
                         state->pressed_buttons |= SCE_CTRL_LTRIGGER;
                         break;
-                    case BTN_INDEX_PLAY_PAUSE:
-                        state->pressed_buttons |= SCE_CTRL_CROSS;
-                        break;
                     case BTN_INDEX_NEXT:
                         state->pressed_buttons |= SCE_CTRL_RTRIGGER;
+                        break;
+                    case BTN_INDEX_SHUFFLE:
+                        state->pressed_buttons |= SCE_CTRL_SQUARE;
                         break;
                     case BTN_INDEX_REPEAT:
                         state->pressed_buttons |= SCE_CTRL_TRIANGLE;
@@ -108,7 +112,8 @@ void input_poll(InputState *state) {
     }
 
     /* If a physical button is held down, also trigger visual sunken feedback */
-    if (state->raw_buttons & SCE_CTRL_CROSS) state->pressed_button = BTN_INDEX_PLAY_PAUSE;
+    if (state->raw_buttons & SCE_CTRL_CROSS) state->pressed_button = BTN_INDEX_PLAY;
+    else if (state->raw_buttons & SCE_CTRL_CIRCLE) state->pressed_button = BTN_INDEX_PAUSE;
     else if (state->raw_buttons & SCE_CTRL_RTRIGGER) state->pressed_button = BTN_INDEX_NEXT;
     else if (state->raw_buttons & SCE_CTRL_LTRIGGER) state->pressed_button = BTN_INDEX_PREV;
     else if (state->raw_buttons & SCE_CTRL_SQUARE) state->pressed_button = BTN_INDEX_SHUFFLE;

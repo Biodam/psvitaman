@@ -12,6 +12,8 @@
 typedef enum {
     CMD_NONE = 0,
     CMD_TOGGLE_PLAY_PAUSE,
+    CMD_PLAY,
+    CMD_PAUSE,
     CMD_SKIP_NEXT,
     CMD_SKIP_PREV,
     CMD_VOLUME_UP,

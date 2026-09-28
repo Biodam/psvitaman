@@ -1503,9 +1503,11 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         }
 
         /* Check mechanical latched "ON" state */
-        bool has_led = (i == BTN_INDEX_SHUFFLE || i == BTN_INDEX_REPEAT || i == BTN_INDEX_PLAY_PAUSE);
+        bool has_led = (i == BTN_INDEX_SHUFFLE || i == BTN_INDEX_REPEAT ||
+                        i == BTN_INDEX_PLAY || i == BTN_INDEX_PAUSE);
         bool is_active = false;
-        if (i == BTN_INDEX_PLAY_PAUSE && state->is_playing) is_active = true;
+        if (i == BTN_INDEX_PLAY && state->is_playing) is_active = true;
+        if (i == BTN_INDEX_PAUSE && !state->is_playing && state->duration_ms > 0) is_active = true;
         if (i == BTN_INDEX_SHUFFLE && state->shuffle_state) is_active = true;
         if (i == BTN_INDEX_REPEAT && state->repeat_state != REPEAT_OFF) is_active = true;
 
@@ -1520,7 +1522,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         /* Draw tactile cantilevered piano key with distinct mechanical latched ON state (Image 2 style) */
         draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_active, is_theme_btn, theme->btn_active_led);
 
-        /* Inset glowing jewel LED in togglable buttons (Play, Shuffle, Repeat) */
+        /* Inset glowing jewel LED in togglable buttons (Play, Pause, Shuffle, Repeat) */
         if (has_led) {
             float led_x = bx + bw - 15.0f;
             float led_y = by + y_disp + 11.0f;
@@ -1536,35 +1538,32 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
 
         switch (i) {
             case BTN_INDEX_THEME:
-                draw_icon_theme(icx, icy, 26.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
+                draw_icon_theme(icx, icy, 24.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
                 break;
-            case BTN_INDEX_PLAY_PAUSE:
-                if (state->is_playing) {
-                    draw_icon_pause(icx, icy, 18.0f, 18.0f, icon_color);
-                } else {
-                    draw_icon_play(icx, icy, 20.0f, icon_color);
-                }
+            case BTN_INDEX_PLAY:
+                draw_icon_play(icx, icy, 18.0f, icon_color);
+                break;
+            case BTN_INDEX_PAUSE:
+                draw_icon_pause(icx, icy, 16.0f, 16.0f, icon_color);
                 break;
             case BTN_INDEX_PREV:
-                draw_icon_prev(icx, icy, 20.0f, icon_color);
+                draw_icon_prev(icx, icy, 18.0f, icon_color);
                 break;
             case BTN_INDEX_NEXT:
-                draw_icon_next(icx, icy, 20.0f, icon_color);
+                draw_icon_next(icx, icy, 18.0f, icon_color);
                 break;
             case BTN_INDEX_SHUFFLE:
-                draw_icon_shuffle(icx, icy, 20.0f, icon_color);
+                draw_icon_shuffle(icx, icy, 18.0f, icon_color);
                 break;
             case BTN_INDEX_REPEAT:
-                draw_icon_repeat(icx, icy, 20.0f, state->repeat_state == REPEAT_TRACK, icon_color);
+                draw_icon_repeat(icx, icy, 18.0f, state->repeat_state == REPEAT_TRACK, icon_color);
                 break;
         }
 
         /* Text label & hotkey hint below the concave cup (rides smoothly with physical key displacement) */
         if (s_font) {
             const char *label_text = b->label;
-            if (i == BTN_INDEX_PLAY_PAUSE) {
-                label_text = state->is_playing ? "PAUSE" : "PLAY";
-            } else if (i == BTN_INDEX_REPEAT) {
+            if (i == BTN_INDEX_REPEAT) {
                 if (state->repeat_state == REPEAT_TRACK) label_text = "REP 1";
                 else if (state->repeat_state == REPEAT_CONTEXT) label_text = "REPEAT";
                 else label_text = "REP OFF";
@@ -1572,7 +1571,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                 label_text = "HOT LINE";
             }
 
-            int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
+            int tw = vita2d_pgf_text_width(s_font, 0.70f, label_text);
             int tx = (int)(bx + (bw - tw) * 0.5f);
             int ty = (int)(by + y_disp + 57.0f);
             unsigned int tc = is_active
@@ -1581,16 +1580,16 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
 
             /* Embossed shadow on text: top inner shadow for sunken key, bottom drop shadow for raised key */
             if (is_active || is_pressed) {
-                vita2d_pgf_draw_text(s_font, tx, ty - 1, RGBA8(0, 0, 0, 160), 0.74f, label_text);
+                vita2d_pgf_draw_text(s_font, tx, ty - 1, RGBA8(0, 0, 0, 160), 0.70f, label_text);
             } else {
-                vita2d_pgf_draw_text(s_font, tx, ty + 1, RGBA8(0, 0, 0, 120), 0.74f, label_text);
+                vita2d_pgf_draw_text(s_font, tx, ty + 1, RGBA8(0, 0, 0, 120), 0.70f, label_text);
             }
-            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.74f, label_text);
+            vita2d_pgf_draw_text(s_font, tx, ty, tc, 0.70f, label_text);
 
-            int hw = vita2d_pgf_text_width(s_font, 0.58f, b->hotkey_hint);
+            int hw = vita2d_pgf_text_width(s_font, 0.55f, b->hotkey_hint);
             int hx = (int)(bx + (bw - hw) * 0.5f);
             int hy = (int)(by + y_disp + 73.0f);
-            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 180), 0.58f, b->hotkey_hint);
+            vita2d_pgf_draw_text(s_font, hx, hy, RGBA8(130, 140, 155, 180), 0.55f, b->hotkey_hint);
         }
     }
 }

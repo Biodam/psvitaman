@@ -120,6 +120,12 @@ static void handle_command(WorkerCommand cmd, const char *token) {
                 spotify_play(token);
             }
             break;
+        case CMD_PLAY:
+            spotify_play(token);
+            break;
+        case CMD_PAUSE:
+            spotify_pause(token);
+            break;
         case CMD_SKIP_NEXT:
             spotify_next(token);
             break;

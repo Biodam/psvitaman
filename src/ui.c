@@ -359,6 +359,8 @@ static float s_prev_accel_y = 0.0f;
 static float s_prev_accel_z = 0.0f;
 static float s_gyro_glare_x = 0.5f;
 static float s_gyro_glare_tilt = 90.0f;
+static float s_gyro_opacity = 0.0f;
+static float s_still_timer = 0.0f;
 static bool s_motion_initialized = false;
 
 bool ui_init(void) {
@@ -469,28 +471,45 @@ void ui_update(float delta_time, const SpotifyPlaybackState *state, int interpol
     if (s_motion_initialized) {
         SceMotionState mstate;
         if (sceMotionGetState(&mstate) >= 0) {
-            /* 7a. Device tilt directly drives dynamic reflection position on the acrylic window */
-            float target_x = 0.5f + (mstate.acceleration.x * 0.50f);
-            if (target_x < 0.12f) target_x = 0.12f;
-            if (target_x > 0.88f) target_x = 0.88f;
+            /* 7a. Device motion activity detection: rotational velocity + acceleration delta */
+            float rot_energy = fabsf(mstate.angularVelocity.x) + fabsf(mstate.angularVelocity.y) + fabsf(mstate.angularVelocity.z);
+            float diff_accel = fabsf(mstate.acceleration.x - s_prev_accel_x) +
+                               fabsf(mstate.acceleration.y - s_prev_accel_y) +
+                               fabsf(mstate.acceleration.z - s_prev_accel_z);
+            float motion_amount = rot_energy + diff_accel * 2.0f;
 
-            s_gyro_glare_x += (target_x - s_gyro_glare_x) * 5.0f * delta_time;
-
-            float target_tilt = 90.0f + (mstate.acceleration.y * 25.0f);
-            s_gyro_glare_tilt += (target_tilt - s_gyro_glare_tilt) * 4.0f * delta_time;
-
-            /* 7b. Sudden vigorous motion triggers a graceful light sweep */
-            if (s_glare_cooldown <= 0.0f) {
-                float mag_gyro = fabsf(mstate.angularVelocity.x) + fabsf(mstate.angularVelocity.y) + fabsf(mstate.angularVelocity.z);
-                float diff_accel = fabsf(mstate.acceleration.x - s_prev_accel_x) +
-                                   fabsf(mstate.acceleration.y - s_prev_accel_y) +
-                                   fabsf(mstate.acceleration.z - s_prev_accel_z);
-                if (mag_gyro > 0.85f || diff_accel > 0.65f) {
-                    s_glare_active = true;
-                    s_glare_progress = -0.40f;
-                    s_glare_cooldown = 8.0f; /* Debounce so continuous motion doesn't spam */
+            if (motion_amount > 0.08f) {
+                /* Moving/rotating: quickly fade in reflection and reset still timer */
+                s_still_timer = 0.0f;
+                s_gyro_opacity += (1.0f - s_gyro_opacity) * 5.5f * delta_time;
+                if (s_gyro_opacity > 1.0f) s_gyro_opacity = 1.0f;
+            } else {
+                /* Still: after a brief settle delay (0.35s), smoothly fade reflection away */
+                s_still_timer += delta_time;
+                if (s_still_timer > 0.35f) {
+                    s_gyro_opacity += (0.0f - s_gyro_opacity) * 2.2f * delta_time;
+                    if (s_gyro_opacity < 0.0f) s_gyro_opacity = 0.0f;
                 }
             }
+
+            /* 7b. Dynamic response to both X and Y axis rotations */
+            /* Roll tilt (acceleration.x) combined with Y-axis yaw rotation (angularVelocity.y) */
+            float target_x = 0.5f + (mstate.acceleration.x * 0.48f) - (mstate.angularVelocity.y * 0.14f);
+            if (target_x < 0.10f) target_x = 0.10f;
+            if (target_x > 0.90f) target_x = 0.90f;
+            s_gyro_glare_x += (target_x - s_gyro_glare_x) * 6.0f * delta_time;
+
+            /* Y-axis pitch (acceleration.y) and pitch velocity (angularVelocity.x) tilt the specular slant angle */
+            float target_tilt = 90.0f + (mstate.acceleration.y * 65.0f) + (mstate.angularVelocity.x * 25.0f);
+            s_gyro_glare_tilt += (target_tilt - s_gyro_glare_tilt) * 5.0f * delta_time;
+
+            /* 7c. Sudden vigorous movement triggers an occasional bright sweep across the glass */
+            if (s_glare_cooldown <= 0.0f && (rot_energy > 0.95f || diff_accel > 0.75f)) {
+                s_glare_active = true;
+                s_glare_progress = -0.40f;
+                s_glare_cooldown = 8.0f;
+            }
+
             s_prev_accel_x = mstate.acceleration.x;
             s_prev_accel_y = mstate.acceleration.y;
             s_prev_accel_z = mstate.acceleration.z;
@@ -1515,13 +1534,14 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     }
 
     /* Acrylic Window Glare / Glass Reflection System (Analytically bounded to window) */
-    /* 1. Interactive specular reflection following device gyro / tilt */
-    float gyro_center_x = wx + ww * s_gyro_glare_x;
-    float gyro_tilt_dx = s_gyro_glare_tilt;
-    for (int bw = -20; bw <= 20; bw += 2) {
-        float dist = fabsf((float)bw);
-        float factor = 1.0f - (dist / 20.0f);
-        int alpha = (int)(factor * factor * 42.0f);
+    /* 1. Interactive specular reflection following device gyro / tilt (fades when still) */
+    if (s_gyro_opacity > 0.01f) {
+        float gyro_center_x = wx + ww * s_gyro_glare_x;
+        float gyro_tilt_dx = s_gyro_glare_tilt;
+        for (int bw = -20; bw <= 20; bw += 2) {
+            float dist = fabsf((float)bw);
+            float factor = 1.0f - (dist / 20.0f);
+            int alpha = (int)(factor * factor * 42.0f * s_gyro_opacity);
         if (alpha > 0) {
             float xb = gyro_center_x + bw - gyro_tilt_dx * 0.5f;
             float xt = gyro_center_x + bw + gyro_tilt_dx * 0.5f;
@@ -1556,8 +1576,12 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
             g_xtc = wx + ww;
             g_ytc = wy + t * wh;
         }
-        vita2d_draw_line(g_xbc, g_ybc, g_xtc, g_ytc, RGBA8(255, 255, 255, 65));
+        int core_alpha = (int)(65.0f * s_gyro_opacity);
+        if (core_alpha > 0) {
+            vita2d_draw_line(g_xbc, g_ybc, g_xtc, g_ytc, RGBA8(255, 255, 255, (unsigned int)core_alpha));
+        }
     }
+}
 
     /* 2. Occasional dynamic specular glare sweep across the glass */
     if (s_glare_active) {

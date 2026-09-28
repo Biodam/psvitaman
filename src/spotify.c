@@ -831,6 +831,8 @@ static bool spotify_fetch_json(const char *access_token, const char *url, cJSON 
     return false;
 }
 
+static char s_last_active_device_id[128] = {0};
+
 bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state) {
     if (!access_token || !state) return false;
 
@@ -864,6 +866,10 @@ bool spotify_get_playback(const char *access_token, SpotifyPlaybackState *state)
 
         cJSON *device = cJSON_GetObjectItem(json, "device");
         if (device) {
+            cJSON *dev_id = cJSON_GetObjectItem(device, "id");
+            if (dev_id && cJSON_IsString(dev_id) && strlen(dev_id->valuestring) > 0) {
+                utils_safe_strncpy(s_last_active_device_id, dev_id->valuestring, sizeof(s_last_active_device_id));
+            }
             cJSON *dev_name = cJSON_GetObjectItem(device, "name");
             if (dev_name && cJSON_IsString(dev_name)) {
                 utils_safe_strncpy(state->device_name, dev_name->valuestring, sizeof(state->device_name));
@@ -1167,38 +1173,64 @@ bool spotify_set_volume(const char *access_token, int volume_percent) {
 }
 
 bool spotify_set_shuffle(const char *access_token, bool state) {
+    if (!access_token) return false;
+
     char url[256];
+    if (s_last_active_device_id[0] != '\0') {
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s&device_id=%s",
+                 state ? "true" : "false", s_last_active_device_id);
+        LOG_INFO("spotify_set_shuffle: targeting active device %s (state=%s)...", s_last_active_device_id, state ? "true" : "false");
+        if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
+            return true;
+        }
+    }
+
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s", state ? "true" : "false");
+    LOG_INFO("spotify_set_shuffle: targeting default active player (state=%s)...", state ? "true" : "false");
     if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
         return true;
     }
 
-    /* Fallback: specify active device_id */
+    /* Fallback: look up device */
     char dev_id[128] = {0};
     if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
         snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/shuffle?state=%s&device_id=%s",
                  state ? "true" : "false", dev_id);
+        LOG_INFO("spotify_set_shuffle: targeting discovered device %s...", dev_id);
         return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
     }
     return false;
 }
 
 bool spotify_set_repeat(const char *access_token, SpotifyRepeatMode mode) {
+    if (!access_token) return false;
+
     const char *state_str = "off";
     if (mode == REPEAT_CONTEXT) state_str = "context";
     else if (mode == REPEAT_TRACK) state_str = "track";
 
     char url[256];
+    if (s_last_active_device_id[0] != '\0') {
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s&device_id=%s",
+                 state_str, s_last_active_device_id);
+        LOG_INFO("spotify_set_repeat: targeting active device %s (mode=%s)...", s_last_active_device_id, state_str);
+        if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
+            return true;
+        }
+    }
+
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s", state_str);
+    LOG_INFO("spotify_set_repeat: targeting default active player (mode=%s)...", state_str);
     if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
         return true;
     }
 
-    /* Fallback: specify active device_id */
+    /* Fallback: look up device */
     char dev_id[128] = {0};
     if (spotify_get_best_device(access_token, dev_id, sizeof(dev_id), NULL, 0)) {
         snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/repeat?state=%s&device_id=%s",
                  state_str, dev_id);
+        LOG_INFO("spotify_set_repeat: targeting discovered device %s...", dev_id);
         return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
     }
     return false;

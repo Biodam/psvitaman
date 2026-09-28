@@ -40,6 +40,10 @@ static uint64_t g_token_expiry_tick = 0;
 static WorkerCommand g_cmd_queue[CMD_QUEUE_SIZE];
 static int g_cmd_head = 0;
 static int g_cmd_tail = 0;
+static uint64_t s_shuffle_override_tick = 0;
+static bool s_shuffle_override_val = false;
+static uint64_t s_repeat_override_tick = 0;
+static SpotifyRepeatMode s_repeat_override_val = REPEAT_OFF;
 
 #if defined(__psp2__) || defined(__VITA__)
 static SceUID g_thid = -1;
@@ -139,20 +143,36 @@ static void handle_command(WorkerCommand cmd, const char *token) {
             spotify_set_volume(token, g_playback_state.volume_percent - 5);
             break;
         case CMD_TOGGLE_SHUFFLE: {
+            lock_mutex();
             bool target = !g_playback_state.shuffle_state;
+            unlock_mutex();
+            LOG_INFO("Worker: CMD_TOGGLE_SHUFFLE (target=%s)...", target ? "true" : "false");
             if (spotify_set_shuffle(token, target)) {
                 lock_mutex();
                 g_playback_state.shuffle_state = target;
+                s_shuffle_override_val = target;
+                s_shuffle_override_tick = get_time_ms();
                 unlock_mutex();
+                LOG_INFO("Worker: shuffle toggled successfully to %s", target ? "ON" : "OFF");
+            } else {
+                LOG_WARN("Worker: spotify_set_shuffle command failed!");
             }
             break;
         }
         case CMD_CYCLE_REPEAT: {
+            lock_mutex();
             SpotifyRepeatMode next_mode = (g_playback_state.repeat_state + 1) % 3;
+            unlock_mutex();
+            LOG_INFO("Worker: CMD_CYCLE_REPEAT (mode=%d)...", (int)next_mode);
             if (spotify_set_repeat(token, next_mode)) {
                 lock_mutex();
                 g_playback_state.repeat_state = next_mode;
+                s_repeat_override_val = next_mode;
+                s_repeat_override_tick = get_time_ms();
                 unlock_mutex();
+                LOG_INFO("Worker: repeat cycled successfully to mode %d", (int)next_mode);
+            } else {
+                LOG_WARN("Worker: spotify_set_repeat command failed!");
             }
             break;
         }
@@ -263,9 +283,16 @@ static void* worker_thread_func(void *argp)
                 unlock_mutex();
 
                 if (spotify_get_playback(token_copy, &new_state)) {
+                    uint64_t cur_t = get_time_ms();
                     lock_mutex();
+                    if (cur_t - s_shuffle_override_tick < 3500) {
+                        new_state.shuffle_state = s_shuffle_override_val;
+                    }
+                    if (cur_t - s_repeat_override_tick < 3500) {
+                        new_state.repeat_state = s_repeat_override_val;
+                    }
                     g_playback_state = new_state;
-                    g_state_updated_tick = get_time_ms();
+                    g_state_updated_tick = cur_t;
                     unlock_mutex();
 
                     if (error_is_active()) {
@@ -296,9 +323,16 @@ static void* worker_thread_func(void *argp)
                     unlock_mutex();
 
                     if (spotify_get_playback(token_copy, &new_state)) {
+                        uint64_t cur_t = get_time_ms();
                         lock_mutex();
+                        if (cur_t - s_shuffle_override_tick < 3500) {
+                            new_state.shuffle_state = s_shuffle_override_val;
+                        }
+                        if (cur_t - s_repeat_override_tick < 3500) {
+                            new_state.repeat_state = s_repeat_override_val;
+                        }
                         g_playback_state = new_state;
-                        g_state_updated_tick = get_time_ms();
+                        g_state_updated_tick = cur_t;
                         unlock_mutex();
 
                         /* Clear transient errors if poll succeeded */

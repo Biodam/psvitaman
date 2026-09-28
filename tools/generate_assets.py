@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate retro Sony Walkman / cassette themed LiveArea assets for PSVitaman:
+Generate retro cassette themed LiveArea assets for PSVitaman:
 - sce_sys/icon0.png (128x128, 32-bit RGBA)
 - sce_sys/livearea/contents/bg.png (840x500, 32-bit RGBA)
 - sce_sys/livearea/contents/startup.png (280x158, 32-bit RGBA)
@@ -104,7 +104,7 @@ def generate_bg():
     draw.rectangle([0, 452, 840, 455], fill=(70, 78, 95))
     
     # Title typography
-    draw.text((40, 12), "SONY PS VITA  |  PSVITAMAN  •  SPOTIFY CASSETTE REMOTE", fill=(210, 215, 225))
+    draw.text((40, 12), "PLAYSTATION VITA  |  PSVITAMAN  •  SPOTIFY CASSETTE REMOTE", fill=(210, 215, 225))
     
     # Large detailed Cassette Deck in Center
     draw_cassette(draw, [180, 80, 660, 410], shell_color=(36, 42, 54), label_color=(242, 240, 232), spool_color=(250, 250, 250))

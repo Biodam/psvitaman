@@ -7,8 +7,8 @@ This document provides complete architectural context, design patterns, debuggin
 ## 1. Project Overview & Philosophy
 
 **PSVitaman** is a retro-styled Spotify remote client for the PlayStation Vita (ARM Cortex-A9), packaged as a standalone `.vpk` homebrew.
-- Modeled after iconic Sony Walkman cassette tape decks (TPS-L2, WM-F5 Sports, WM-DD).
-- Features rotating tape spools with dynamic tape radius physics, marquee track scrolling, vector audio transport buttons, and authentic Walkman themes.
+- Modeled after iconic vintage cassette tape decks (TPS-L2, WM-F5 Sports, WM-DD).
+- Features rotating tape spools with dynamic tape radius physics, marquee track scrolling, vector audio transport buttons, and authentic retro themes.
 - Functions as an active desk clock/player: keeps the PS Vita display awake (`sceKernelPowerTick`) and incorporates micro-orbiting pixel shift to protect OLED panels on PS Vita 1000 models.
 - **Zero-friction pairing**: phone scans an on-screen QR code, authorizes via Spotify PKCE OAuth on GitHub Pages, and posts tokens directly to the Vita over local Wi-Fi.
 
@@ -46,7 +46,7 @@ This document provides complete architectural context, design patterns, debuggin
 
 1. **Network Engine (`src/spotify.c`)**:
    - Uses embedded **MbedTLS 3.6.5** (`mbedtls_ssl_context`, `mbedtls_net_context`).
-   - Does **NOT** depend on Sony `SceHttp`, `SceSsl`, or `iTLS-Enso`. Works natively on 3.60, 3.65 Enso, and 3.68+ firmwares.
+   - Does **NOT** depend on native `SceHttp`, `SceSsl`, or `iTLS-Enso`. Works natively on 3.60, 3.65 Enso, and 3.68+ firmwares.
    - Sockets run through Vita's native `SceNet` stack (`sceNetSocket`, `sceNetConnect`, `sceNetSend`, `sceNetRecv`).
    - Bundles Mozilla root CA certificates (`src/ca_cert.h`) for full TLS verification.
 
@@ -96,14 +96,14 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 
 | Theme ID | Name | Inspiration / Colorway |
 |---|---|---|
-| `0` (`THEME_TPS_L2`) | **TPS-L2 (1979)** | Classic Sony Walkman Metallic Blue, Silver brushed aluminum, Hot Line Orange theme button. |
-| `1` (`THEME_SPORTS_YELLOW`) | **Sports WM-F5 (1983)** | Vivid Action Yellow, Rubber Black bumper accents, Turquoise/Teal theme button. |
-| `2` (`THEME_GRAPHITE_DD`) | **Graphite WM-DD (1982)** | Dark Charcoal Anthracite, Brushed Chrome/Platinum, Crimson Ruby theme button. |
+| `0` (`THEME_TPS_L2`) | **TPS-L2 (1979)** | Classic Metallic Blue, Silver brushed aluminum, Hot Line Orange theme button. |
+| `1` (`THEME_SPORTS_YELLOW`) | **Sports F5 Action (1983)** | Vivid Action Yellow, Rubber Black bumper accents, Turquoise/Teal theme button. |
+| `2` (`THEME_GRAPHITE_DD`) | **Graphite DD (1982)** | Dark Charcoal Anthracite, Brushed Chrome/Platinum, Crimson Ruby theme button. |
 | `3` (`THEME_STEALTH_OLED`) | **Stealth AMOLED** | True 0-IRE Pitch Black, High-Contrast Phosphor Green accents, lowest power draw. |
-| `4` (`THEME_WM2_RED`) | **WM-2 Red (1981)** | Japanese Crimson Red, Brushed Silver trim, Matte Black piano keys, Amber Gold theme button. |
-| `5` (`THEME_WM_D6C_PRO`) | **WM-D6C Pro (1984)** | Studio Matte Gunmetal Black, Dolby Gold typography, Type IV Metal tape cassette, Studio Red LED. |
-| `6` (`THEME_MY_FIRST_SONY`) | **My First Sony (1987)** | Iconic Primary Toy Red chassis, Cobalt Blue deck buttons, Sunflower Yellow accents, Sky Blue spools. |
-| `7` (`THEME_CHAMPAGNE_GOLD`) | **WM-701C Gold (1989)** | 10th Anniversary Champagne Titanium Gold chassis, Royal Navy deck buttons, Polished Brass accents. |
+| `4` (`THEME_WM2_RED`) | **Model 2 Red (1981)** | Japanese Crimson Red, Brushed Silver trim, Matte Black piano keys, Amber Gold theme button. |
+| `5` (`THEME_WM_D6C_PRO`) | **Studio D6C Pro (1984)** | Studio Matte Gunmetal Black, Dolby Gold typography, Type IV Metal tape cassette, Studio Red LED. |
+| `6` (`THEME_POP_RED`) | **Pop Retro Red (1987)** | Iconic Primary Toy Red chassis, Cobalt Blue deck buttons, Sunflower Yellow accents, Sky Blue spools. |
+| `7` (`THEME_CHAMPAGNE_GOLD`) | **10th Anniversary Gold (1989)** | 10th Anniversary Champagne Titanium Gold chassis, Royal Navy deck buttons, Polished Brass accents. |
 
 **Controls to Switch Themes**:
 - Press **D-Pad Right** (next theme) or **D-Pad Left** (previous theme).
@@ -115,15 +115,16 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 
 ```
 +--------------------------------------------------------------------+
-| [HUD] SONY [MODEL]  DEV: Speaker  PHONES (o)(o)  VOL: 85%  [BAT 85%] * |  Y: 6..54
+| [HUD] PSVITAMAN [MODEL]    DEV: Speaker    VOL: 85%   [BAT 85%] *  |  Y: 8..50
 +--------------------------------------------------------------------+
 |                                                                    |
 |                      CASSETTE TAPE BAY                             |
-|          [ (O)           === TAPE ===           (O) ]              |  Y: 58..434
-|               Supply Reel             Take-up Reel                 |
+|          [ (O)       100  75  50  25  0       (O) ]                |  Y: 56..424
+|          Supply Reel     Calibration Ruler  Take-up Reel           |
 |                                                                    |
+|   02:45 / 03:30           PLAYING >>            SHUF: ON | REP: ALL|
 +--------------------------------------------------------------------+
-| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 446..532
+| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 432..532
 |  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |
 +--------------------------------------------------------------------+
 ```

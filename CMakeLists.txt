@@ -135,6 +135,7 @@ target_link_libraries(psvitaman
   ScePgf_stub
   SceCommonDialog_stub
   ScePower_stub
+  SceMotion_stub
   SceAudio_stub
 )
 

@@ -49,7 +49,7 @@
 |          [ (O)       100  75  50  25  0       (O) ]                |
 |          Supply Reel     Calibration Ruler  Take-up Reel           |
 |                                                                    |
-|   02:45 / 03:30           PLAYING >>            SHUF: ON | REP: ALL|
+|   02:45                   PLAYING >>                        03:30  |
 +--------------------------------------------------------------------+
 | [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |
 |  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |

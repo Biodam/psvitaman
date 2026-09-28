@@ -1049,25 +1049,22 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     draw_beveled_box(hx, hy, hw, hh, RGBA8(14, 16, 22, 255), theme->border_dark, theme->border_light);
 
     if (s_font) {
-        /* Time Readout (Left): MM:SS / MM:SS with increased font size */
-        char cur_time[16], total_time[16], time_hud[40];
+        char cur_time[16], total_time[16];
         utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
         utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
-        snprintf(time_hud, sizeof(time_hud), "%s / %s", cur_time, total_time);
-        vita2d_pgf_draw_text(s_font, (int)(hx + 16), (int)(hy + 22), theme->btn_active_led, 0.85f, time_hud);
+
+        /* Elapsed Time (Left) */
+        vita2d_pgf_draw_text(s_font, (int)(hx + 18), (int)(hy + 22), theme->btn_active_led, 0.85f, cur_time);
 
         /* Center Status Badge: PLAYING >> or PAUSED || */
         const char *status_badge = state->is_playing ? "PLAYING >>" : "PAUSED ||";
         unsigned int status_col = state->is_playing ? theme->btn_active_led : theme->text_muted;
-        int sw_b = vita2d_pgf_text_width(s_font, 0.82f, status_badge);
-        vita2d_pgf_draw_text(s_font, (int)(hx + (hw - sw_b) * 0.5f), (int)(hy + 22), status_col, 0.82f, status_badge);
+        int sw_b = vita2d_pgf_text_width(s_font, 0.85f, status_badge);
+        vita2d_pgf_draw_text(s_font, (int)(hx + (hw - sw_b) * 0.5f), (int)(hy + 22), status_col, 0.85f, status_badge);
 
-        /* Mode Badges (Right): SHUF & REP with increased font size */
-        char mode_str[64];
-        const char *rep_str = (state->repeat_state == REPEAT_TRACK) ? "TRK" : ((state->repeat_state == REPEAT_CONTEXT) ? "ALL" : "OFF");
-        snprintf(mode_str, sizeof(mode_str), "SHUF: %s | REP: %s", state->shuffle_state ? "ON" : "OFF", rep_str);
-        int mw = vita2d_pgf_text_width(s_font, 0.80f, mode_str);
-        vita2d_pgf_draw_text(s_font, (int)(hx + hw - mw - 16), (int)(hy + 22), theme->text_muted, 0.80f, mode_str);
+        /* Total Track Duration (Right) */
+        int tw_tot = vita2d_pgf_text_width(s_font, 0.85f, total_time);
+        vita2d_pgf_draw_text(s_font, (int)(hx + hw - tw_tot - 18), (int)(hy + 22), theme->text_muted, 0.85f, total_time);
     }
 }
 

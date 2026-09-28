@@ -122,7 +122,7 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 |          [ (O)       100  75  50  25  0       (O) ]                |  Y: 70..422
 |          Supply Reel     Calibration Ruler  Take-up Reel           |
 |                                                                    |
-|   02:45 / 03:30           PLAYING >>            SHUF: ON | REP: ALL|
+|   02:45                   PLAYING >>                        03:30  |
 +--------------------------------------------------------------------+
 | [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 432..528
 |  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |

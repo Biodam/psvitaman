@@ -107,7 +107,6 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 
 **Controls to Switch Themes**:
 - Press **D-Pad Right** (next theme) or **D-Pad Left** (previous theme).
-- Tap the **THEME button** (`[< >]`) on the bottom touchscreen bar.
 
 ---
 
@@ -124,20 +123,20 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 |                                                                    |
 |   02:45                   PLAYING >>                        03:30  |
 +-------------------------------------------------------------------------------+
-| [THEME]  [PLAY]  [PAUSE]  [PREV]  [NEXT]  [SHUFFLE]  [REPEAT]                 |  Y: 432..528
-|  [< >]    [X]      [O]     [L]     [R]      [SQ]      [TRI]                   |
+|    [PLAY]      [PAUSE]      [PREV]      [NEXT]     [SHUFFLE]    [REPEAT]      |  Y: 432..528
+|     [X]          [O]         [L]         [R]         [SQ]        [TRI]        |
 +-------------------------------------------------------------------------------+
 ```
 
 | Physical Button | Touchscreen Hitbox | Action |
 |---|---|---|
-| **Cross ($\times$)** | **PLAY** (Button 2) | Start / Resume Playback |
-| **Circle ($\bigcirc$)** | **PAUSE** (Button 3) | Pause Playback (also dismisses error/QR) |
-| **L-Trigger** | **PREV** (Button 4) | Previous Track |
-| **R-Trigger** | **NEXT** (Button 5) | Skip Track |
-| **Square ($\square$)** | **SHUFFLE** (Button 6) | Toggle Shuffle |
-| **Triangle ($\triangle$)** | **REPEAT** (Button 7) | Cycle Repeat (Off / Context / Track) |
-| **D-Pad Right** | **THEME** (Button 1, Far Left) | Next Theme |
+| **Cross ($\times$)** | **PLAY** (Button 1) | Start / Resume Playback |
+| **Circle ($\bigcirc$)** | **PAUSE** (Button 2) | Pause Playback (also dismisses error/QR) |
+| **L-Trigger** | **PREV** (Button 3) | Previous Track |
+| **R-Trigger** | **NEXT** (Button 4) | Skip Track |
+| **Square ($\square$)** | **SHUFFLE** (Button 5) | Toggle Shuffle |
+| **Triangle ($\triangle$)** | **REPEAT** (Button 6) | Cycle Repeat (Off / Context / Track) |
+| **D-Pad Right** | — | Next Theme |
 | **D-Pad Left** | — | Previous Theme |
 | **D-Pad Up / Down** | — | Volume $\pm 5\%$ |
 | **Select** | — | Reset Pairing / Clear Config / Enter Setup Mode |

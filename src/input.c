@@ -14,15 +14,14 @@ static uint32_t s_prev_buttons = 0;
 static bool s_prev_touch = false;
 static int s_touch_held_btn = -1;
 
-/* Deck Button Layout: 7 mechanical audio buttons across bottom (Y: 438..522, W: 118, H: 84) */
+/* Deck Button Layout: 6 mechanical audio buttons across bottom (Y: 438..522, W: 138, H: 84) */
 static const DeckButtonRect s_deck_buttons[DECK_BTN_COUNT] = {
-    {  31, 438, 118, 84, "THEME",   "[< >]" },
-    { 161, 438, 118, 84, "PLAY",    "[X]" },
-    { 291, 438, 118, 84, "PAUSE",   "[O]" },
-    { 421, 438, 118, 84, "PREV",    "[L]" },
-    { 551, 438, 118, 84, "NEXT",    "[R]" },
-    { 681, 438, 118, 84, "SHUFFLE", "[SQ]" },
-    { 811, 438, 118, 84, "REPEAT",  "[TRI]" }
+    {  30, 438, 138, 84, "PLAY",    "[X]" },
+    { 182, 438, 138, 84, "PAUSE",   "[O]" },
+    { 334, 438, 138, 84, "PREV",    "[L]" },
+    { 486, 438, 138, 84, "NEXT",    "[R]" },
+    { 638, 438, 138, 84, "SHUFFLE", "[SQ]" },
+    { 790, 438, 138, 84, "REPEAT",  "[TRI]" }
 };
 
 const DeckButtonRect *input_get_button_rects(void) {
@@ -83,9 +82,6 @@ void input_poll(InputState *state) {
             /* Finger was released! If released over a button, synthesize press */
             if (s_touch_held_btn >= 0) {
                 switch (s_touch_held_btn) {
-                    case BTN_INDEX_THEME:
-                        state->pressed_buttons |= SCE_CTRL_RIGHT;
-                        break;
                     case BTN_INDEX_PLAY:
                         state->pressed_buttons |= SCE_CTRL_CROSS;
                         break;
@@ -118,7 +114,6 @@ void input_poll(InputState *state) {
     else if (state->raw_buttons & SCE_CTRL_LTRIGGER) state->pressed_button = BTN_INDEX_PREV;
     else if (state->raw_buttons & SCE_CTRL_SQUARE) state->pressed_button = BTN_INDEX_SHUFFLE;
     else if (state->raw_buttons & SCE_CTRL_TRIANGLE) state->pressed_button = BTN_INDEX_REPEAT;
-    else if (state->raw_buttons & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) state->pressed_button = BTN_INDEX_THEME;
 
 #else
     /* Non-Vita mock */

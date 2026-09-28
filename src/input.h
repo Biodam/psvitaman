@@ -8,16 +8,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define DECK_BTN_COUNT 7
+#define DECK_BTN_COUNT 6
 
 typedef enum {
-    BTN_INDEX_THEME = 0,
-    BTN_INDEX_PLAY = 1,
-    BTN_INDEX_PAUSE = 2,
-    BTN_INDEX_PREV = 3,
-    BTN_INDEX_NEXT = 4,
-    BTN_INDEX_SHUFFLE = 5,
-    BTN_INDEX_REPEAT = 6,
+    BTN_INDEX_PLAY = 0,
+    BTN_INDEX_PAUSE = 1,
+    BTN_INDEX_PREV = 2,
+    BTN_INDEX_NEXT = 3,
+    BTN_INDEX_SHUFFLE = 4,
+    BTN_INDEX_REPEAT = 5,
     BTN_INDEX_NONE = -1
 } DeckButtonIndex;
 

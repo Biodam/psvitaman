@@ -1492,15 +1492,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         float bw = b->w;
         float bh = b->h;
 
-        bool is_theme_btn = (i == BTN_INDEX_THEME);
-        unsigned int key_color;
-
-        if (is_theme_btn) {
-            /* Hot Line Orange or striking accent key (like the red button in Image 2) */
-            key_color = theme->btn_theme_special;
-        } else {
-            key_color = theme->btn_normal;
-        }
+        unsigned int key_color = theme->btn_normal;
 
         /* Check mechanical latched "ON" state */
         bool has_led = (i == BTN_INDEX_SHUFFLE || i == BTN_INDEX_REPEAT ||
@@ -1520,7 +1512,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         }
 
         /* Draw tactile cantilevered piano key with distinct mechanical latched ON state (Image 2 style) */
-        draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_active, is_theme_btn, theme->btn_active_led);
+        draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_active, false, theme->btn_active_led);
 
         /* Inset glowing jewel LED in togglable buttons (Play, Pause, Shuffle, Repeat) */
         if (has_led) {
@@ -1532,31 +1524,26 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         /* Center coordinates for vector icon inside the concave finger cup */
         float icx = bx + bw * 0.5f;
         float icy = by + y_disp + 28.0f;
-        unsigned int icon_color = is_active
-            ? theme->btn_active_led
-            : (is_theme_btn ? RGBA8(255, 255, 255, 255) : theme->text_primary);
+        unsigned int icon_color = is_active ? theme->btn_active_led : theme->text_primary;
 
         switch (i) {
-            case BTN_INDEX_THEME:
-                draw_icon_theme(icx, icy, 24.0f, theme->btn_theme_special, theme->btn_theme_special_dark);
-                break;
             case BTN_INDEX_PLAY:
-                draw_icon_play(icx, icy, 18.0f, icon_color);
+                draw_icon_play(icx, icy, 20.0f, icon_color);
                 break;
             case BTN_INDEX_PAUSE:
-                draw_icon_pause(icx, icy, 16.0f, 16.0f, icon_color);
+                draw_icon_pause(icx, icy, 18.0f, 18.0f, icon_color);
                 break;
             case BTN_INDEX_PREV:
-                draw_icon_prev(icx, icy, 18.0f, icon_color);
+                draw_icon_prev(icx, icy, 20.0f, icon_color);
                 break;
             case BTN_INDEX_NEXT:
-                draw_icon_next(icx, icy, 18.0f, icon_color);
+                draw_icon_next(icx, icy, 20.0f, icon_color);
                 break;
             case BTN_INDEX_SHUFFLE:
-                draw_icon_shuffle(icx, icy, 18.0f, icon_color);
+                draw_icon_shuffle(icx, icy, 20.0f, icon_color);
                 break;
             case BTN_INDEX_REPEAT:
-                draw_icon_repeat(icx, icy, 18.0f, state->repeat_state == REPEAT_TRACK, icon_color);
+                draw_icon_repeat(icx, icy, 20.0f, state->repeat_state == REPEAT_TRACK, icon_color);
                 break;
         }
 
@@ -1567,11 +1554,9 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
                 if (state->repeat_state == REPEAT_TRACK) label_text = "REP 1";
                 else if (state->repeat_state == REPEAT_CONTEXT) label_text = "REPEAT";
                 else label_text = "REP OFF";
-            } else if (i == BTN_INDEX_THEME) {
-                label_text = "HOT LINE";
             }
 
-            int tw = vita2d_pgf_text_width(s_font, 0.70f, label_text);
+            int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
             int tx = (int)(bx + (bw - tw) * 0.5f);
             int ty = (int)(by + y_disp + 57.0f);
             unsigned int tc = is_active

@@ -709,21 +709,48 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
         vita2d_pgf_draw_text(s_font, (int)(gx + 24), (int)(gy + 17), ink_dim, 0.70f, "STOPPED");
     }
 
-    /* 1b. Center High-Precision Digital Timecode / Counter (with milliseconds & ghost background) */
-    int total_sec = interpolated_progress_ms / 1000;
-    int ms_part = interpolated_progress_ms % 1000;
-    int mins = total_sec / 60;
-    int secs = total_sec % 60;
-    char timer_str[32];
-    snprintf(timer_str, sizeof(timer_str), "%02d:%02d.%03d", mins, secs, ms_part);
+    /* 1b. Center Segmented Progress Bar + Time Elapsed / Remaining */
+    char cur_time[16], total_time[16];
+    utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
+    utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
 
-    int tw_tim = vita2d_pgf_text_width(s_font, 0.82f, timer_str);
-    int timer_x = (int)(gx + (gw - tw_tim) * 0.5f);
+    float ratio = 0.0f;
+    if (state->duration_ms > 0) {
+        ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
+        if (ratio < 0.0f) ratio = 0.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+    }
 
-    /* Faint ghost unlit segments "88:88.888" beneath the active counter */
-    vita2d_pgf_draw_text(s_font, timer_x, (int)(gy + 17), ghost_ink, 0.82f, "88:88.888");
-    /* Crisp active digital digits */
-    vita2d_pgf_draw_text(s_font, timer_x, (int)(gy + 17), ink, 0.82f, timer_str);
+    const int num_segments = 24;
+    const float seg_w = 9.0f;
+    const float seg_gap = 2.0f;
+    const float seg_h = 6.0f;
+    float total_seg_w = num_segments * seg_w + (num_segments - 1) * seg_gap;
+    int active_segs = (int)(ratio * num_segments);
+
+    int tw_cur = vita2d_pgf_text_width(s_font, 0.68f, cur_time);
+    int tw_tot = vita2d_pgf_text_width(s_font, 0.68f, total_time);
+    float total_bar_area_w = (float)tw_cur + 8.0f + total_seg_w + 8.0f + (float)tw_tot;
+    float bar_start_x = gx + (gw - total_bar_area_w) * 0.5f;
+
+    /* Current elapsed time */
+    vita2d_pgf_draw_text(s_font, (int)bar_start_x, (int)(gy + 17), ink, 0.68f, cur_time);
+
+    /* Progress bar segments */
+    float seg_x_origin = bar_start_x + tw_cur + 8.0f;
+    float seg_y = gy + 11.0f;
+    for (int s = 0; s < num_segments; s++) {
+        float sx = seg_x_origin + s * (seg_w + seg_gap);
+        if (s < active_segs) {
+            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ink);
+            vita2d_draw_line(sx, seg_y, sx + seg_w - 1.0f, seg_y, color_tint(theme->lcd_backlight, 1.25f));
+        } else {
+            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ghost_ink);
+        }
+    }
+
+    /* Total track duration */
+    vita2d_pgf_draw_text(s_font, (int)(seg_x_origin + total_seg_w + 8.0f), (int)(gy + 17), ink, 0.68f, total_time);
 
     /* 1c. Right Badges: Shuffle & Repeat with ghost segment templates */
     const char *rep_str = (state->repeat_state == REPEAT_TRACK) ? "[REP 1]" : ((state->repeat_state == REPEAT_CONTEXT) ? "[REP ALL]" : "[REP]");
@@ -773,7 +800,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
         vita2d_pgf_draw_text(s_font, (int)title_clip_x, (int)(title_clip_y + 18), ink, 1.05f, title_buf);
     }
 
-    /* Row 3: Subtitle with Procedural 👤 Artist Icon on Left (Y: gy + 67) */
+    /* Row 3: Subtitle on Left, Graphic Spectrum Analyzer on Right (Y: gy + 67) */
     draw_lcd_artist_icon(gx + 18.0f, gy + 64.0f, ink);
 
     char sub_buf[600] = {0};
@@ -787,53 +814,58 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
         utils_safe_strncpy(sub_buf, "Connect Spotify from Phone, PC, or Console", sizeof(sub_buf));
     }
 
+    /* Row 3 (Right): Graphic Spectrum Analyzer (14-Band LCD Audio Bars) */
+    const int num_bands = 14;
+    const float bar_w = 8.0f;
+    const float bar_gap = 3.0f;
+    const int num_blocks = 6;
+    const float block_h = 2.8f;
+    const float block_gap = 1.2f;
+    float total_spectrum_w = num_bands * bar_w + (num_bands - 1) * bar_gap;
+    float spec_x = gx + gw - total_spectrum_w - 14.0f;
+    float spec_base_y = gy + 74.0f;
+
+    /* Left subtitle text clipped nicely before spectrum bars */
     float sub_clip_x = gx + 28.0f;
-    float sub_clip_w = 420.0f;
+    float sub_clip_w = (spec_x - sub_clip_x) - 16.0f;
     int sub_len = (int)strlen(sub_buf);
     while (sub_len > 0 && vita2d_pgf_text_width(s_font, 0.72f, sub_buf) > (int)sub_clip_w) {
         sub_buf[--sub_len] = '\0';
     }
     vita2d_pgf_draw_text(s_font, (int)sub_clip_x, (int)(gy + 68), ink, 0.72f, sub_buf);
 
-    /* Row 3 (Right): Retro Dashed / Segmented LCD Progress Bar */
-    /* Modeled after Image 2: 2:38 [ - - - - - - - - ] 5:15 */
-    char cur_time[16], total_time[16];
-    utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
-    utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
+    /* Draw Spectrum Analyzer Bars */
+    for (int b = 0; b < num_bands; b++) {
+        float bx = spec_x + b * (bar_w + bar_gap);
+        int lit_blocks = 0;
 
-    float prog_area_r = gx + gw - 14.0f;
-    int tw_tot = vita2d_pgf_text_width(s_font, 0.68f, total_time);
-    vita2d_pgf_draw_text(s_font, (int)(prog_area_r - tw_tot), (int)(gy + 68), ink, 0.68f, total_time);
+        if (state->is_playing) {
+            float val = 0.0f;
+            if (b < 4) {
+                /* Bass / kick rhythm */
+                val = fabsf(sinf(s_flutter_time * 0.32f + b * 0.5f)) * 0.65f +
+                      fabsf(cosf(s_flutter_time * 0.68f + b * 0.3f)) * 0.45f;
+            } else if (b < 10) {
+                /* Mid / vocal harmonics */
+                val = fabsf(sinf(s_flutter_time * 0.55f + b * 0.75f)) * 0.60f +
+                      fabsf(cosf(s_flutter_time * 1.15f + b * 0.4f)) * 0.50f;
+            } else {
+                /* High / treble flutter */
+                val = fabsf(sinf(s_flutter_time * 1.35f + b * 1.1f)) * 0.55f +
+                      fabsf(sinf(s_flutter_time * 2.2f + b * 0.8f)) * 0.45f;
+            }
+            if (val > 1.0f) val = 1.0f;
+            lit_blocks = 1 + (int)(val * 5.0f); /* 1..6 blocks */
+        }
 
-    float seg_r = prog_area_r - tw_tot - 8.0f;
-    const int num_segments = 20;
-    const float seg_w = 10.5f;
-    const float seg_gap = 2.5f;
-    const float seg_h = 5.0f;
-    float total_seg_w = num_segments * seg_w + (num_segments - 1) * seg_gap;
-    float seg_start_x = seg_r - total_seg_w;
-
-    int tw_cur = vita2d_pgf_text_width(s_font, 0.68f, cur_time);
-    vita2d_pgf_draw_text(s_font, (int)(seg_start_x - tw_cur - 8.0f), (int)(gy + 68), ink, 0.68f, cur_time);
-
-    float ratio = 0.0f;
-    if (state->duration_ms > 0) {
-        ratio = (float)interpolated_progress_ms / (float)state->duration_ms;
-        if (ratio < 0.0f) ratio = 0.0f;
-        if (ratio > 1.0f) ratio = 1.0f;
-    }
-    int active_segs = (int)(ratio * num_segments);
-
-    float seg_y = gy + 61.0f;
-    for (int s = 0; s < num_segments; s++) {
-        float sx = seg_start_x + s * (seg_w + seg_gap);
-        if (s < active_segs) {
-            /* Active illuminated segment with subtle top specular highlight */
-            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ink);
-            vita2d_draw_line(sx, seg_y, sx + seg_w - 1.0f, seg_y, color_tint(theme->lcd_backlight, 1.25f));
-        } else {
-            /* Ghost inactive unlit LCD segment */
-            vita2d_draw_rectangle(sx, seg_y, seg_w, seg_h, ghost_ink);
+        for (int blk = 0; blk < num_blocks; blk++) {
+            float blk_y = spec_base_y - (blk + 1) * (block_h + block_gap);
+            if (blk < lit_blocks) {
+                vita2d_draw_rectangle(bx, blk_y, bar_w, block_h, ink);
+                vita2d_draw_line(bx, blk_y, bx + bar_w - 1.0f, blk_y, color_tint(theme->lcd_backlight, 1.20f));
+            } else {
+                vita2d_draw_rectangle(bx, blk_y, bar_w, block_h, ghost_ink);
+            }
         }
     }
 }

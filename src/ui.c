@@ -513,9 +513,9 @@ static inline unsigned int color_lerp(unsigned int c1, unsigned int c2, float t)
     int g = g1 + (int)((g2 - g1) * t);
     int b = b1 + (int)((b2 - b1) * t);
     int a = a1 + (int)((a2 - a1) * t);
-    if (r > 255) r = 255; if (r < 0) r = 0;
-    if (g > 255) g = 255; if (g < 0) g = 0;
-    if (b > 255) b = 255; if (b < 0) b = 0;
+    if (r > 255) { r = 255; } else if (r < 0) { r = 0; }
+    if (g > 255) { g = 255; } else if (g < 0) { g = 0; }
+    if (b > 255) { b = 255; } else if (b < 0) { b = 0; }
     return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
 }
 
@@ -524,9 +524,9 @@ static inline unsigned int color_tint(unsigned int c, float factor) {
     int g = (int)(((c >> 8) & 0xFF) * factor);
     int b = (int)(((c >> 16) & 0xFF) * factor);
     int a = (c >> 24) & 0xFF;
-    if (r > 255) r = 255; if (r < 0) r = 0;
-    if (g > 255) g = 255; if (g < 0) g = 0;
-    if (b > 255) b = 255; if (b < 0) b = 0;
+    if (r > 255) { r = 255; } else if (r < 0) { r = 0; }
+    if (g > 255) { g = 255; } else if (g < 0) { g = 0; }
+    if (b > 255) { b = 255; } else if (b < 0) { b = 0; }
     return RGBA8((unsigned int)r, (unsigned int)g, (unsigned int)b, (unsigned int)a);
 }
 
@@ -735,7 +735,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
 
 static void draw_skeuomorphic_key(float x, float y, float w, float h,
                                   unsigned int base_col, bool is_pressed, bool is_latched,
-                                  bool is_special, unsigned int active_glow_col) {
+                                  unsigned int active_glow_col) {
     float y_off = 0.0f;
     float h_adj = 0.0f;
     if (is_pressed) {
@@ -975,15 +975,6 @@ static void draw_icon_repeat(float cx, float cy, float size, bool is_track, unsi
     if (is_track && s_font) {
         vita2d_pgf_draw_text(s_font, (int)(cx - 3), (int)(cy + 4), c, 0.65f, "1");
     }
-}
-
-static void draw_icon_theme(float cx, float cy, float size, unsigned int fill_c, unsigned int inner_c) {
-    /* 3D concentric tactile button */
-    vita2d_draw_fill_circle(cx, cy + 1.0f, size * 0.48f, RGBA8(0, 0, 0, 80)); /* drop shadow */
-    vita2d_draw_fill_circle(cx, cy, size * 0.46f, inner_c);
-    vita2d_draw_fill_circle(cx, cy, size * 0.34f, fill_c);
-    vita2d_draw_fill_circle(cx - 1.0f, cy - 1.0f, size * 0.20f, color_tint(fill_c, 1.30f)); /* top specular */
-    vita2d_draw_fill_circle(cx, cy, size * 0.12f, inner_c);
 }
 
 static void draw_screw(float x, float y) {
@@ -1512,7 +1503,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
         }
 
         /* Draw tactile cantilevered piano key with distinct mechanical latched ON state (Image 2 style) */
-        draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_active, false, theme->btn_active_led);
+        draw_skeuomorphic_key(bx, by, bw, bh, key_color, is_pressed, is_active, theme->btn_active_led);
 
         /* Inset glowing jewel LED in togglable buttons (Play, Pause, Shuffle, Repeat) */
         if (has_led) {
@@ -1559,9 +1550,7 @@ static void render_transport_bar(const SpotifyPlaybackState *state, const InputS
             int tw = vita2d_pgf_text_width(s_font, 0.74f, label_text);
             int tx = (int)(bx + (bw - tw) * 0.5f);
             int ty = (int)(by + y_disp + 57.0f);
-            unsigned int tc = is_active
-                ? theme->btn_active_led
-                : (is_theme_btn ? RGBA8(255, 255, 255, 240) : theme->text_muted);
+            unsigned int tc = is_active ? theme->btn_active_led : theme->text_muted;
 
             /* Embossed shadow on text: top inner shadow for sunken key, bottom drop shadow for raised key */
             if (is_active || is_pressed) {

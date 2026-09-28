@@ -613,15 +613,15 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     /* Fluorescent / CCFL edge-lit backlighting gradient (diffuse glow with brighter center) */
     unsigned int bg_top = color_tint(theme->lcd_backlight, 1.08f);
     unsigned int bg_bot = color_tint(theme->lcd_backlight, 0.92f);
-    float step = 2.0f;
+    float step = 5.0f;
     int num_steps = (int)(gh / step);
     for (int i = 0; i < num_steps; i++) {
         float t = (float)i / (float)num_steps;
-        vita2d_draw_rectangle(gx, gy + i * step, gw, step, color_lerp(bg_top, bg_bot, t));
+        vita2d_draw_rectangle(gx, gy + i * step, gw, step + 1.0f, color_lerp(bg_top, bg_bot, t));
     }
 
     /* 4. Horizontal STN LCD electrode scanline micro-raster */
-    for (float scan_y = gy + 1; scan_y < gy + gh - 1; scan_y += 2.0f) {
+    for (float scan_y = gy + 1; scan_y < gy + gh - 1; scan_y += 3.0f) {
         vita2d_draw_line(gx, scan_y, gx + gw, scan_y, RGBA8(0, 0, 0, 14));
     }
 
@@ -642,7 +642,7 @@ static void draw_retro_lcd_screen(float x, float y, float w, float h,
     vita2d_draw_line(gx + gw - 1, gy, gx + gw - 1, gy + gh, RGBA8(0, 0, 0, 80));
 
     /* 7. Diagonal Specular Glass Reflection Sheen (Top-right corner lens flare, analytically bounded) */
-    for (int off = -18; off <= 18; off++) {
+    for (int off = -18; off <= 18; off += 2) {
         float dist = fabsf((float)off);
         float alpha = (1.0f - dist / 18.0f) * 28.0f;
         float x1 = gx + gw - 90.0f + off;
@@ -1496,7 +1496,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         float tilt_dx = 90.0f;
 
         /* Soft specular falloff beam */
-        for (int bw = -26; bw <= 26; bw++) {
+        for (int bw = -26; bw <= 26; bw += 2) {
             float dist = fabsf((float)bw);
             float factor = 1.0f - (dist / 26.0f);
             int alpha = (int)(factor * factor * 70.0f);

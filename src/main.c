@@ -58,8 +58,8 @@ int main(int argc, char *argv[]) {
     sceNetInit(&net_param);
     sceNetCtlInit();
 
-    /* 4. Initialize vita2d Graphics */
-    vita2d_init();
+    /* 4. Initialize vita2d Graphics with 8 MB temporary draw pool */
+    vita2d_init_advanced(8 * 1024 * 1024);
     vita2d_set_clear_color(RGBA8(22, 26, 34, 255));
 #endif
 

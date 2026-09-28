@@ -1167,7 +1167,14 @@ bool spotify_previous(const char *access_token) {
 bool spotify_set_volume(const char *access_token, int volume_percent) {
     if (volume_percent < 0) volume_percent = 0;
     if (volume_percent > 100) volume_percent = 100;
-    char url[128];
+    char url[256];
+    if (s_last_active_device_id[0] != '\0') {
+        snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/volume?volume_percent=%d&device_id=%s",
+                 volume_percent, s_last_active_device_id);
+        if (spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT)) {
+            return true;
+        }
+    }
     snprintf(url, sizeof(url), "https://api.spotify.com/v1/me/player/volume?volume_percent=%d", volume_percent);
     return spotify_send_rest_cmd(access_token, url, HTTP_REQ_PUT);
 }

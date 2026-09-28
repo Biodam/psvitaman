@@ -37,13 +37,26 @@ static char g_access_token[512] = {0};
 static uint64_t g_token_expiry_tick = 0;
 
 /* Circular Command Queue */
-static WorkerCommand g_cmd_queue[CMD_QUEUE_SIZE];
+typedef struct {
+    WorkerCommand type;
+    int int_val;
+} WorkerQueueItem;
+
+static WorkerQueueItem g_cmd_queue[CMD_QUEUE_SIZE];
 static int g_cmd_head = 0;
 static int g_cmd_tail = 0;
+
+static uint64_t s_play_override_tick = 0;
+static bool s_play_override_val = false;
+
 static uint64_t s_shuffle_override_tick = 0;
 static bool s_shuffle_override_val = false;
+
 static uint64_t s_repeat_override_tick = 0;
 static SpotifyRepeatMode s_repeat_override_val = REPEAT_OFF;
+
+static uint64_t s_volume_override_tick = 0;
+static int s_volume_override_val = 50;
 
 #if defined(__psp2__) || defined(__VITA__)
 static SceUID g_thid = -1;
@@ -87,13 +100,13 @@ static void sleep_ms(int ms) {
 #endif
 }
 
-static bool pop_command(WorkerCommand *cmd) {
+static bool pop_command(WorkerQueueItem *item) {
     lock_mutex();
     if (g_cmd_head == g_cmd_tail) {
         unlock_mutex();
         return false;
     }
-    *cmd = g_cmd_queue[g_cmd_head];
+    *item = g_cmd_queue[g_cmd_head];
     g_cmd_head = (g_cmd_head + 1) % CMD_QUEUE_SIZE;
     unlock_mutex();
     return true;
@@ -107,75 +120,168 @@ bool worker_enqueue_command(WorkerCommand cmd) {
         unlock_mutex();
         return false;
     }
-    g_cmd_queue[g_cmd_tail] = cmd;
+
+    uint64_t now = get_time_ms();
+    WorkerQueueItem item;
+    item.type = cmd;
+    item.int_val = 0;
+
+    /* Immediate optimistic UI state mutation - zero latency response */
+    switch (cmd) {
+        case CMD_PLAY:
+            g_playback_state.is_playing = true;
+            s_play_override_val = true;
+            s_play_override_tick = now;
+            g_state_updated_tick = now;
+            item.int_val = 1;
+            break;
+
+        case CMD_PAUSE:
+            g_playback_state.is_playing = false;
+            s_play_override_val = false;
+            s_play_override_tick = now;
+            g_state_updated_tick = now;
+            item.int_val = 0;
+            break;
+
+        case CMD_TOGGLE_PLAY_PAUSE: {
+            bool target = !g_playback_state.is_playing;
+            g_playback_state.is_playing = target;
+            s_play_override_val = target;
+            s_play_override_tick = now;
+            g_state_updated_tick = now;
+            item.type = target ? CMD_PLAY : CMD_PAUSE;
+            item.int_val = target ? 1 : 0;
+            break;
+        }
+
+        case CMD_TOGGLE_SHUFFLE: {
+            bool target = !g_playback_state.shuffle_state;
+            g_playback_state.shuffle_state = target;
+            s_shuffle_override_val = target;
+            s_shuffle_override_tick = now;
+            item.int_val = target ? 1 : 0;
+            LOG_INFO("Worker (optimistic): shuffle toggled to %s", target ? "ON" : "OFF");
+            break;
+        }
+
+        case CMD_CYCLE_REPEAT: {
+            SpotifyRepeatMode next_mode = (g_playback_state.repeat_state + 1) % 3;
+            g_playback_state.repeat_state = next_mode;
+            s_repeat_override_val = next_mode;
+            s_repeat_override_tick = now;
+            item.int_val = (int)next_mode;
+            LOG_INFO("Worker (optimistic): repeat cycled to mode %d", (int)next_mode);
+            break;
+        }
+
+        case CMD_VOLUME_UP: {
+            int v = g_playback_state.volume_percent + 5;
+            if (v > 100) v = 100;
+            g_playback_state.volume_percent = v;
+            s_volume_override_val = v;
+            s_volume_override_tick = now;
+            item.int_val = v;
+            break;
+        }
+
+        case CMD_VOLUME_DOWN: {
+            int v = g_playback_state.volume_percent - 5;
+            if (v < 0) v = 0;
+            g_playback_state.volume_percent = v;
+            s_volume_override_val = v;
+            s_volume_override_tick = now;
+            item.int_val = v;
+            break;
+        }
+
+        case CMD_SKIP_NEXT:
+        case CMD_SKIP_PREV:
+        case CMD_FORCE_REFRESH:
+        default:
+            break;
+    }
+
+    g_cmd_queue[g_cmd_tail] = item;
     g_cmd_tail = next_tail;
     unlock_mutex();
     return true;
 }
 
-static void handle_command(WorkerCommand cmd, const char *token) {
+static void handle_command(WorkerQueueItem item, const char *token) {
     if (!token || strlen(token) == 0) return;
 
-    switch (cmd) {
-        case CMD_TOGGLE_PLAY_PAUSE:
-            if (g_playback_state.is_playing) {
-                spotify_pause(token);
-            } else {
-                spotify_play(token);
+    switch (item.type) {
+        case CMD_PLAY:
+            if (!spotify_play(token)) {
+                LOG_WARN("Worker: spotify_play failed! Reverting optimistic state");
+                lock_mutex();
+                s_play_override_tick = 0;
+                g_playback_state.is_playing = false;
+                unlock_mutex();
             }
             break;
-        case CMD_PLAY:
-            spotify_play(token);
-            break;
+
         case CMD_PAUSE:
-            spotify_pause(token);
+            if (!spotify_pause(token)) {
+                LOG_WARN("Worker: spotify_pause failed! Reverting optimistic state");
+                lock_mutex();
+                s_play_override_tick = 0;
+                g_playback_state.is_playing = true;
+                unlock_mutex();
+            }
             break;
+
         case CMD_SKIP_NEXT:
             spotify_next(token);
             break;
+
         case CMD_SKIP_PREV:
             spotify_previous(token);
             break;
+
         case CMD_VOLUME_UP:
-            spotify_set_volume(token, g_playback_state.volume_percent + 5);
-            break;
         case CMD_VOLUME_DOWN:
-            spotify_set_volume(token, g_playback_state.volume_percent - 5);
+            spotify_set_volume(token, item.int_val);
             break;
+
         case CMD_TOGGLE_SHUFFLE: {
-            lock_mutex();
-            bool target = !g_playback_state.shuffle_state;
-            unlock_mutex();
-            LOG_INFO("Worker: CMD_TOGGLE_SHUFFLE (target=%s)...", target ? "true" : "false");
+            bool target = (item.int_val != 0);
+            LOG_INFO("Worker: executing spotify_set_shuffle (target=%s)...", target ? "true" : "false");
             if (spotify_set_shuffle(token, target)) {
-                lock_mutex();
-                g_playback_state.shuffle_state = target;
-                s_shuffle_override_val = target;
-                s_shuffle_override_tick = get_time_ms();
-                unlock_mutex();
-                LOG_INFO("Worker: shuffle toggled successfully to %s", target ? "ON" : "OFF");
+                LOG_INFO("Worker: spotify_set_shuffle succeeded for %s", target ? "ON" : "OFF");
             } else {
-                LOG_WARN("Worker: spotify_set_shuffle command failed!");
+                LOG_WARN("Worker: spotify_set_shuffle failed, reverting optimistic state");
+                lock_mutex();
+                if (s_shuffle_override_val == target) {
+                    s_shuffle_override_tick = 0;
+                    g_playback_state.shuffle_state = !target;
+                    s_shuffle_override_val = !target;
+                }
+                unlock_mutex();
             }
             break;
         }
+
         case CMD_CYCLE_REPEAT: {
-            lock_mutex();
-            SpotifyRepeatMode next_mode = (g_playback_state.repeat_state + 1) % 3;
-            unlock_mutex();
-            LOG_INFO("Worker: CMD_CYCLE_REPEAT (mode=%d)...", (int)next_mode);
-            if (spotify_set_repeat(token, next_mode)) {
-                lock_mutex();
-                g_playback_state.repeat_state = next_mode;
-                s_repeat_override_val = next_mode;
-                s_repeat_override_tick = get_time_ms();
-                unlock_mutex();
-                LOG_INFO("Worker: repeat cycled successfully to mode %d", (int)next_mode);
+            SpotifyRepeatMode target = (SpotifyRepeatMode)item.int_val;
+            LOG_INFO("Worker: executing spotify_set_repeat (mode=%d)...", (int)target);
+            if (spotify_set_repeat(token, target)) {
+                LOG_INFO("Worker: spotify_set_repeat succeeded for mode %d", (int)target);
             } else {
-                LOG_WARN("Worker: spotify_set_repeat command failed!");
+                LOG_WARN("Worker: spotify_set_repeat failed, reverting optimistic state");
+                lock_mutex();
+                if (s_repeat_override_val == target) {
+                    s_repeat_override_tick = 0;
+                    SpotifyRepeatMode prev = (target + 2) % 3;
+                    g_playback_state.repeat_state = prev;
+                    s_repeat_override_val = prev;
+                }
+                unlock_mutex();
             }
             break;
         }
+
         case CMD_FORCE_REFRESH:
         default:
             break;
@@ -264,16 +370,16 @@ static void* worker_thread_func(void *argp)
             }
 
             /* Check for pending UI commands */
-            WorkerCommand cmd;
-            if (pop_command(&cmd)) {
+            WorkerQueueItem item;
+            if (pop_command(&item)) {
                 g_syncing = true;
                 char token_copy[512];
                 lock_mutex();
                 strncpy(token_copy, g_access_token, sizeof(token_copy));
                 unlock_mutex();
 
-                LOG_INFO("Processing transport command: %d", (int)cmd);
-                handle_command(cmd, token_copy);
+                LOG_INFO("Processing transport command: %d", (int)item.type);
+                handle_command(item, token_copy);
 
                 /* Delay 250ms to allow Spotify Web API target to apply command, then poll immediately */
                 sleep_ms(250);
@@ -285,11 +391,18 @@ static void* worker_thread_func(void *argp)
                 if (spotify_get_playback(token_copy, &new_state)) {
                     uint64_t cur_t = get_time_ms();
                     lock_mutex();
-                    if (cur_t - s_shuffle_override_tick < 3500) {
+                    /* Grace window (2000ms): protect optimistic states while Spotify backend synchronizes */
+                    if (cur_t - s_play_override_tick < 2000) {
+                        new_state.is_playing = s_play_override_val;
+                    }
+                    if (cur_t - s_shuffle_override_tick < 2000) {
                         new_state.shuffle_state = s_shuffle_override_val;
                     }
-                    if (cur_t - s_repeat_override_tick < 3500) {
+                    if (cur_t - s_repeat_override_tick < 2000) {
                         new_state.repeat_state = s_repeat_override_val;
+                    }
+                    if (cur_t - s_volume_override_tick < 2000) {
+                        new_state.volume_percent = s_volume_override_val;
                     }
                     g_playback_state = new_state;
                     g_state_updated_tick = cur_t;
@@ -325,11 +438,18 @@ static void* worker_thread_func(void *argp)
                     if (spotify_get_playback(token_copy, &new_state)) {
                         uint64_t cur_t = get_time_ms();
                         lock_mutex();
-                        if (cur_t - s_shuffle_override_tick < 3500) {
+                        /* Grace window (2000ms): protect optimistic states while Spotify backend synchronizes */
+                        if (cur_t - s_play_override_tick < 2000) {
+                            new_state.is_playing = s_play_override_val;
+                        }
+                        if (cur_t - s_shuffle_override_tick < 2000) {
                             new_state.shuffle_state = s_shuffle_override_val;
                         }
-                        if (cur_t - s_repeat_override_tick < 3500) {
+                        if (cur_t - s_repeat_override_tick < 2000) {
                             new_state.repeat_state = s_repeat_override_val;
+                        }
+                        if (cur_t - s_volume_override_tick < 2000) {
+                            new_state.volume_percent = s_volume_override_val;
                         }
                         g_playback_state = new_state;
                         g_state_updated_tick = cur_t;
@@ -387,6 +507,10 @@ bool worker_start(const AppConfig *config) {
 
     memset(&g_playback_state, 0, sizeof(SpotifyPlaybackState));
     g_playback_state.volume_percent = 50;
+    s_play_override_tick = 0;
+    s_shuffle_override_tick = 0;
+    s_repeat_override_tick = 0;
+    s_volume_override_tick = 0;
 
     g_running = true;
     g_authenticated = false;

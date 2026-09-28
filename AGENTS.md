@@ -115,16 +115,16 @@ Configured in `src/ui.h` & `src/ui.c`, persisted in `ux0:data/psvitaman/config.i
 
 ```
 +--------------------------------------------------------------------+
-| [HUD] PSVITAMAN [MODEL]    DEV: Speaker    VOL: 85%   [BAT 85%] *  |  Y: 8..50
+| [HUD] PSVITAMAN [MODEL]    DEV: Speaker    VOL: 85%   [BAT 85%] *  |  Y: 16..60
 +--------------------------------------------------------------------+
 |                                                                    |
 |                      CASSETTE TAPE BAY                             |
-|          [ (O)       100  75  50  25  0       (O) ]                |  Y: 56..424
+|          [ (O)       100  75  50  25  0       (O) ]                |  Y: 70..422
 |          Supply Reel     Calibration Ruler  Take-up Reel           |
 |                                                                    |
 |   02:45 / 03:30           PLAYING >>            SHUF: ON | REP: ALL|
 +--------------------------------------------------------------------+
-| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 432..532
+| [THEME]     [PLAY]      [PREV]      [NEXT]    [SHUFFLE]   [REPEAT]  |  Y: 432..528
 |  [< >]       [X]         [L]         [R]        [SQ]       [TRI]    |
 +--------------------------------------------------------------------+
 ```

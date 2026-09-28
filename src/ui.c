@@ -774,10 +774,10 @@ static void draw_battery_indicator(float bx, float by, const AppTheme *theme) {
 }
 
 static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *theme, int ox, int oy, bool is_syncing) {
-    float tx = 24.0f + ox;
-    float ty = 8.0f + oy;
-    float tw = 912.0f;
-    float th = 42.0f;
+    float tx = 16.0f + ox;
+    float ty = 16.0f + oy;
+    float tw = 928.0f;
+    float th = 44.0f;
 
     draw_beveled_box(tx, ty, tw, th, theme->border_dark, theme->border_light, theme->border_dark);
 
@@ -788,62 +788,62 @@ static void render_top_hud(const SpotifyPlaybackState *state, const AppTheme *th
 
     if (s_font) {
         /* Bold PSVITAMAN brand block */
-        vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 28), theme->text_primary, 1.05f, "PSVITAMAN");
+        vita2d_pgf_draw_text(s_font, (int)(tx + 16), (int)(ty + 29), theme->text_primary, 1.05f, "PSVITAMAN");
 
         /* Model Stamp with ample margin */
-        vita2d_pgf_draw_text(s_font, (int)(tx + 155), (int)(ty + 28), theme->text_accent, 0.78f, theme->model_stamp);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 160), (int)(ty + 29), theme->text_accent, 0.78f, theme->model_stamp);
 
         /* Spotify Device Name (clipped safely in center column, generous width) */
         char dev_hud[128];
         snprintf(dev_hud, sizeof(dev_hud), "DEV: %s", (strlen(state->device_name) > 0) ? state->device_name : "Idle");
-        vita2d_set_clip_rectangle((int)(tx + 360), (int)(ty + 6), 230, 30);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 360), (int)(ty + 28), theme->text_muted, 0.78f, dev_hud);
+        vita2d_set_clip_rectangle((int)(tx + 368), (int)(ty + 7), 235, 30);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 368), (int)(ty + 29), theme->text_muted, 0.78f, dev_hud);
         vita2d_disable_clipping();
 
         /* Volume Display with ample margin */
         char vol_hud[32];
         snprintf(vol_hud, sizeof(vol_hud), "VOL %d%%", state->volume_percent);
-        vita2d_pgf_draw_text(s_font, (int)(tx + 605), (int)(ty + 28), theme->text_primary, 0.80f, vol_hud);
+        vita2d_pgf_draw_text(s_font, (int)(tx + 620), (int)(ty + 29), theme->text_primary, 0.80f, vol_hud);
 
         /* 5-Bar Volume Graphic */
         int num_bars = (state->volume_percent * 5 + 50) / 100;
         for (int b = 0; b < 5; b++) {
-            float bx = tx + 695 + b * 6.5f;
+            float bx = tx + 710 + b * 6.5f;
             float bh = 4.0f + b * 2.5f;
             unsigned int bc = (b < num_bars) ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
-            vita2d_draw_rectangle(bx, ty + 26.0f - bh, 4.5f, bh, bc);
+            vita2d_draw_rectangle(bx, ty + 27.0f - bh, 4.5f, bh, bc);
         }
 
         /* Battery Indicator on Top Right */
-        draw_battery_indicator(tx + tw - 56.0f, ty + 21.0f, theme);
+        draw_battery_indicator(tx + tw - 58.0f, ty + 22.0f, theme);
 
         /* Live Sync Pulse Dot */
         unsigned int sync_c = is_syncing ? theme->btn_active_led : RGBA8(60, 70, 85, 255);
-        vita2d_draw_fill_circle(tx + tw - 16, ty + 21, 4.0f, sync_c);
+        vita2d_draw_fill_circle(tx + tw - 16, ty + 22, 4.0f, sync_c);
     }
 }
 
 static void render_cassette_bay(const SpotifyPlaybackState *state, int interpolated_progress_ms, const AppTheme *theme, int ox, int oy) {
-    /* Single Clean Cassette Bay Panel (Removed redundant second nested panel) */
-    float cx = 24.0f + ox;
-    float cy = 56.0f + oy;
-    float cw = 912.0f;
-    float ch = 368.0f;
+    /* Single Clean Cassette Bay Panel with uniform 16px margins to screen edges */
+    float cx = 16.0f + ox;
+    float cy = 70.0f + oy;
+    float cw = 928.0f;
+    float ch = 352.0f;
 
     draw_beveled_box(cx, cy, cw, ch, theme->cassette_shell, theme->border_light, theme->border_dark);
 
     /* 5 Outer Cassette Bay Screws */
-    draw_screw(cx + 14, cy + 14);
-    draw_screw(cx + cw - 14, cy + 14);
-    draw_screw(cx + 14, cy + ch - 14);
-    draw_screw(cx + cw - 14, cy + ch - 14);
-    draw_screw(cx + cw * 0.5f, cy + 14);
+    draw_screw(cx + 12, cy + 12);
+    draw_screw(cx + cw - 12, cy + 12);
+    draw_screw(cx + 12, cy + ch - 12);
+    draw_screw(cx + cw - 12, cy + ch - 12);
+    draw_screw(cx + cw * 0.5f, cy + 12);
 
     /* Upper Cassette Paper Label Card */
     float lx = cx + 24.0f;
-    float ly = cy + 16.0f;
-    float lw = cw - 48.0f; /* 864.0f */
-    float lh = 92.0f;
+    float ly = cy + 14.0f;
+    float lw = cw - 48.0f; /* 880.0f */
+    float lh = 88.0f;
 
     draw_beveled_box(lx, ly, lw, lh, theme->label_bg, RGBA8(255, 255, 255, 240), RGBA8(180, 175, 165, 255));
 
@@ -853,31 +853,31 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
 
     if (s_font) {
         /* Bold Boxed "A" */
-        draw_beveled_box(lx + 14, ly + 14, 22, 20, theme->label_stripe_a, RGBA8(255, 255, 255, 255), RGBA8(0, 0, 0, 255));
-        vita2d_pgf_draw_text(s_font, (int)(lx + 19), (int)(ly + 30), RGBA8(255, 255, 255, 255), 0.85f, "A");
+        draw_beveled_box(lx + 14, ly + 13, 22, 20, theme->label_stripe_a, RGBA8(255, 255, 255, 255), RGBA8(0, 0, 0, 255));
+        vita2d_pgf_draw_text(s_font, (int)(lx + 19), (int)(ly + 29), RGBA8(255, 255, 255, 255), 0.85f, "A");
 
         /* Label Typography with enhanced legibility */
-        vita2d_pgf_draw_text(s_font, (int)(lx + 46), (int)(ly + 30), theme->label_text, 0.72f, "PSVITAMAN - C-90 HIGH BIAS 70us EQ");
-        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 215), (int)(ly + 30), theme->label_text, 0.72f, "DOLBY B NR  |  STEREO");
+        vita2d_pgf_draw_text(s_font, (int)(lx + 46), (int)(ly + 29), theme->label_text, 0.72f, "PSVITAMAN - C-90 HIGH BIAS 70us EQ");
+        vita2d_pgf_draw_text(s_font, (int)(lx + lw - 215), (int)(ly + 29), theme->label_text, 0.72f, "DOLBY B NR  |  STEREO");
 
         /* Track Title Marquee */
         const char *track_title = (strlen(state->track_name) > 0) ? state->track_name : "Playback Idle / Stopped";
         int title_w = vita2d_pgf_text_width(s_font, 1.22f, track_title);
 
         float clip_x = lx + 14.0f;
-        float clip_y = ly + 36.0f;
+        float clip_y = ly + 34.0f;
         float clip_w = lw - 28.0f;
-        float clip_h = 32.0f;
+        float clip_h = 30.0f;
 
         vita2d_set_clip_rectangle((int)clip_x, (int)clip_y, (int)clip_w, (int)clip_h);
 
         if (title_w > clip_w) {
             float total_scroll = title_w + 90.0f;
             float cur_x = clip_x - fmodf(s_marquee_offset, total_scroll);
-            vita2d_pgf_draw_text(s_font, (int)cur_x, (int)(clip_y + 24), theme->label_text, 1.22f, track_title);
-            vita2d_pgf_draw_text(s_font, (int)(cur_x + total_scroll), (int)(clip_y + 24), theme->label_text, 1.22f, track_title);
+            vita2d_pgf_draw_text(s_font, (int)cur_x, (int)(clip_y + 23), theme->label_text, 1.22f, track_title);
+            vita2d_pgf_draw_text(s_font, (int)(cur_x + total_scroll), (int)(clip_y + 23), theme->label_text, 1.22f, track_title);
         } else {
-            vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(clip_y + 24), theme->label_text, 1.22f, track_title);
+            vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(clip_y + 23), theme->label_text, 1.22f, track_title);
         }
         vita2d_disable_clipping();
 
@@ -893,32 +893,32 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
             utils_safe_strncpy(artist_album, "Connect Spotify from Phone, PC, or Console", sizeof(artist_album));
         }
 
-        vita2d_set_clip_rectangle((int)clip_x, (int)(ly + 68), (int)clip_w, 22);
-        vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(ly + 84), RGBA8(80, 85, 95, 255), 0.82f, artist_album);
+        vita2d_set_clip_rectangle((int)clip_x, (int)(ly + 66), (int)clip_w, 20);
+        vita2d_pgf_draw_text(s_font, (int)clip_x, (int)(ly + 81), RGBA8(80, 85, 95, 255), 0.82f, artist_album);
         vita2d_disable_clipping();
     }
 
     /* Central Clear Acrylic Cassette Window */
     float wx = cx + 80.0f;
-    float wy = cy + 118.0f;
-    float ww = cw - 160.0f; /* 752.0f */
-    float wh = 160.0f;
+    float wy = cy + 110.0f;
+    float ww = cw - 160.0f; /* 768.0f */
+    float wh = 152.0f;
 
     /* Deep Sunken Acrylic Window Cavity */
     draw_beveled_box(wx, wy, ww, wh, theme->cassette_inner, theme->border_dark, theme->border_light);
 
     /* Mechanical Tape Counter (Left of Window) - geared to right spool rotation */
     int counter_val = (int)(s_tape_counter_rotations * 1.5f + (float)interpolated_progress_ms * 0.001f * 0.8f) % 1000;
-    draw_tape_counter(cx + 14.0f, wy + 42.0f, counter_val, theme);
+    draw_tape_counter(cx + 14.0f, wy + (wh - 32.0f) * 0.5f, counter_val, theme);
 
     /* Stereo LED VU Meters (Right of Window) - synchronized to flutter/playback phase */
-    draw_vu_meters(cx + cw - 64.0f, wy + 20.0f, state->is_playing, s_flutter_time, theme);
+    draw_vu_meters(cx + cw - 64.0f, wy + (wh - 100.0f) * 0.5f, state->is_playing, s_flutter_time, theme);
 
     /* Stamped "AUTO STOP" Header inside window glass */
     if (s_font) {
         const char *auto_stop = "AUTO  STOP";
         int asw = vita2d_pgf_text_width(s_font, 0.70f, auto_stop);
-        vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy + 18), (theme->border_light & 0x00FFFFFF) | 0x99000000, 0.70f, auto_stop);
+        vita2d_pgf_draw_text(s_font, (int)(wx + (ww - asw) * 0.5f), (int)(wy + 17), (theme->border_light & 0x00FFFFFF) | 0x99000000, 0.70f, auto_stop);
     }
 
     /* Physics-inspired tape roll geometry (Conservation of Cross-Sectional Tape Area) */
@@ -929,16 +929,16 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         if (progress_ratio > 1.0f) progress_ratio = 1.0f;
     }
 
-    /* Expanded spool radius range (25px to 70px) so tape progress is visually striking */
+    /* Dynamic spool radius: 25px bare hub to 68px full pack */
     const float min_r = 25.0f;
-    const float max_r = 70.0f;
+    const float max_r = 68.0f;
     const float min_r_sq = min_r * min_r;
     const float max_r_sq = max_r * max_r;
     float left_radius  = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * (1.0f - progress_ratio));
     float right_radius = sqrtf(min_r_sq + (max_r_sq - min_r_sq) * progress_ratio);
 
-    float left_cx  = wx + 138.0f;
-    float right_cx = wx + ww - 138.0f;
+    float left_cx  = wx + 145.0f;
+    float right_cx = wx + ww - 145.0f;
     float spool_cy = wy + wh * 0.5f - 2.0f;
 
     /* Dual Rotating Cassette Spools with Dynamic Linear Speed Physics */
@@ -948,7 +948,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     draw_spool(right_cx, spool_cy, right_radius, s_right_spool_angle, right_is_leader, theme);
 
     /* Tangential Tape Ribbon Path: peeling from supply reel, across rollers, into take-up reel */
-    float roller_y = spool_cy + 52.0f;
+    float roller_y = spool_cy + 50.0f;
     float roller_L_x = left_cx - 38.0f;
     float roller_R_x = right_cx + 38.0f;
 
@@ -983,7 +983,7 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     /* Tape Calibration Scale on window glass (communicates progress via tape radius) */
     float center_x = wx + ww * 0.5f;
     if (s_font) {
-        vita2d_pgf_draw_text(s_font, (int)(center_x - 52), (int)(spool_cy - 28), (theme->border_light & 0x00FFFFFF) | 0xAA000000, 0.65f, "100  75  50  25   0");
+        vita2d_pgf_draw_text(s_font, (int)(center_x - 52), (int)(spool_cy - 27), (theme->border_light & 0x00FFFFFF) | 0xAA000000, 0.65f, "100  75  50  25   0");
     }
     for (int i = -4; i <= 4; i++) {
         float mark_y = spool_cy + i * 6.5f;
@@ -1026,25 +1026,25 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
     /* Cassette Head Trapezoid Notch */
     float tz_w = 400.0f;
     float tz_x = cx + (cw - tz_w) * 0.5f;
-    float tz_y = cy + 288.0f;
-    float tz_h = 24.0f;
+    float tz_y = cy + 270.0f;
+    float tz_h = 22.0f;
     draw_beveled_box(tz_x, tz_y, tz_w, tz_h, theme->cassette_inner, theme->border_dark, theme->border_light);
 
     /* Capstan Holes */
-    vita2d_draw_fill_circle(tz_x + 55.0f, tz_y + 12.0f, 6.0f, RGBA8(180, 185, 195, 255));
-    vita2d_draw_fill_circle(tz_x + 55.0f, tz_y + 12.0f, 3.0f, RGBA8(10, 12, 16, 255));
-    vita2d_draw_fill_circle(tz_x + tz_w - 55.0f, tz_y + 12.0f, 6.0f, RGBA8(180, 185, 195, 255));
-    vita2d_draw_fill_circle(tz_x + tz_w - 55.0f, tz_y + 12.0f, 3.0f, RGBA8(10, 12, 16, 255));
+    vita2d_draw_fill_circle(tz_x + 55.0f, tz_y + 11.0f, 6.0f, RGBA8(180, 185, 195, 255));
+    vita2d_draw_fill_circle(tz_x + 55.0f, tz_y + 11.0f, 3.0f, RGBA8(10, 12, 16, 255));
+    vita2d_draw_fill_circle(tz_x + tz_w - 55.0f, tz_y + 11.0f, 6.0f, RGBA8(180, 185, 195, 255));
+    vita2d_draw_fill_circle(tz_x + tz_w - 55.0f, tz_y + 11.0f, 3.0f, RGBA8(10, 12, 16, 255));
 
     /* Tape Head Exposure Window & Magnetic Ribbon */
-    vita2d_draw_rectangle(tz_x + 100.0f, tz_y + 5.0f, tz_w - 200.0f, 14.0f, RGBA8(8, 10, 14, 255));
-    vita2d_draw_rectangle(tz_x + 110.0f, tz_y + 9.0f, tz_w - 220.0f, 6.0f, theme->tape_brown);
+    vita2d_draw_rectangle(tz_x + 100.0f, tz_y + 4.0f, tz_w - 200.0f, 14.0f, RGBA8(8, 10, 14, 255));
+    vita2d_draw_rectangle(tz_x + 110.0f, tz_y + 8.0f, tz_w - 220.0f, 6.0f, theme->tape_brown);
 
     /* Lower HUD Inset Strip (Progress communicates via tape; digital bar removed for clean layout) */
     float hx = cx + 24.0f;
-    float hy = cy + 322.0f;
-    float hw = cw - 48.0f; /* 864.0f */
-    float hh = 30.0f;
+    float hy = cy + 304.0f;
+    float hw = cw - 48.0f; /* 880.0f */
+    float hh = 32.0f;
 
     draw_beveled_box(hx, hy, hw, hh, RGBA8(14, 16, 22, 255), theme->border_dark, theme->border_light);
 
@@ -1054,29 +1054,29 @@ static void render_cassette_bay(const SpotifyPlaybackState *state, int interpola
         utils_format_time_ms(interpolated_progress_ms, cur_time, sizeof(cur_time));
         utils_format_time_ms(state->duration_ms, total_time, sizeof(total_time));
         snprintf(time_hud, sizeof(time_hud), "%s / %s", cur_time, total_time);
-        vita2d_pgf_draw_text(s_font, (int)(hx + 16), (int)(hy + 21), theme->btn_active_led, 0.85f, time_hud);
+        vita2d_pgf_draw_text(s_font, (int)(hx + 16), (int)(hy + 22), theme->btn_active_led, 0.85f, time_hud);
 
         /* Center Status Badge: PLAYING >> or PAUSED || */
         const char *status_badge = state->is_playing ? "PLAYING >>" : "PAUSED ||";
         unsigned int status_col = state->is_playing ? theme->btn_active_led : theme->text_muted;
         int sw_b = vita2d_pgf_text_width(s_font, 0.82f, status_badge);
-        vita2d_pgf_draw_text(s_font, (int)(hx + (hw - sw_b) * 0.5f), (int)(hy + 21), status_col, 0.82f, status_badge);
+        vita2d_pgf_draw_text(s_font, (int)(hx + (hw - sw_b) * 0.5f), (int)(hy + 22), status_col, 0.82f, status_badge);
 
         /* Mode Badges (Right): SHUF & REP with increased font size */
         char mode_str[64];
         const char *rep_str = (state->repeat_state == REPEAT_TRACK) ? "TRK" : ((state->repeat_state == REPEAT_CONTEXT) ? "ALL" : "OFF");
         snprintf(mode_str, sizeof(mode_str), "SHUF: %s | REP: %s", state->shuffle_state ? "ON" : "OFF", rep_str);
         int mw = vita2d_pgf_text_width(s_font, 0.80f, mode_str);
-        vita2d_pgf_draw_text(s_font, (int)(hx + hw - mw - 16), (int)(hy + 21), theme->text_muted, 0.80f, mode_str);
+        vita2d_pgf_draw_text(s_font, (int)(hx + hw - mw - 16), (int)(hy + 22), theme->text_muted, 0.80f, mode_str);
     }
 }
 
 static void render_transport_bar(const SpotifyPlaybackState *state, const InputState *input, const AppTheme *theme, int ox, int oy) {
-    /* Sunken mechanical button bay across the bottom of the device */
-    float bx_bay = 24.0f + ox;
+    /* Sunken mechanical button bay across the bottom of the device (uniform 16px margins) */
+    float bx_bay = 16.0f + ox;
     float by_bay = 432.0f + oy;
-    float bw_bay = 912.0f;
-    float bh_bay = 100.0f;
+    float bw_bay = 928.0f;
+    float bh_bay = 96.0f;
     draw_beveled_box(bx_bay, by_bay, bw_bay, bh_bay, theme->border_dark, theme->border_dark, theme->border_light);
 
     const DeckButtonRect *btns = input_get_button_rects();

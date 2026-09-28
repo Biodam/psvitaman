@@ -49,6 +49,7 @@ int main(int argc, char *argv[]) {
     /* 2. Load System Modules */
     sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
     sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_MOTION);
 
     /* 3. Initialize SceNet Stack */
     SceNetInitParam net_param;
@@ -99,8 +100,11 @@ int main(int argc, char *argv[]) {
 
     while (app_running) {
 #if defined(__psp2__) || defined(__VITA__)
-        /* Prevent screen dimming and auto-suspend while running */
+        /* Prevent screen dimming, OLED turn-off, and auto-suspend while running */
         sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+        sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+        sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_OLED_OFF);
+        sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_OLED_DIMMING);
 #endif
 
         /* Calculate Delta Time */
@@ -310,6 +314,7 @@ int main(int argc, char *argv[]) {
     vita2d_fini();
     sceNetCtlTerm();
     sceNetTerm();
+    sceSysmoduleUnloadModule(SCE_SYSMODULE_MOTION);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
     sceKernelExitProcess(0);

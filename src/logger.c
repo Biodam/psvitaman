@@ -62,9 +62,11 @@ static void rotate_log_if_needed(void) {
         char old_path[300];
         snprintf(old_path, sizeof(old_path), "%s.old", s_log_path);
         remove(old_path);
-        rename(s_log_path, old_path);
+        if (rename(s_log_path, old_path) != 0) {
+            remove(s_log_path);
+        }
 
-        s_log_file = fopen(s_log_path, "a");
+        s_log_file = fopen(s_log_path, "w");
     }
 }
 

@@ -79,7 +79,7 @@ This document provides complete architectural context, design patterns, debuggin
    - Shifts HUD text, cassette window, and control deck coordinates imperceptibly while keeping pixels active.
 
 6. **Screen Awake Keepalive (`src/main.c`)**:
-   - Calls `sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT)` every frame to prevent Vita auto-dim and standby during long listening sessions.
+   - Calls `sceKernelPowerTick` with `SCE_KERNEL_POWER_TICK_DEFAULT`, `SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND`, `SCE_KERNEL_POWER_TICK_DISABLE_OLED_OFF`, and `SCE_KERNEL_POWER_TICK_DISABLE_OLED_DIMMING` every frame to prevent Vita OLED shutoff, auto-dim, and standby during long listening sessions.
 
 7. **Tactile Sound Engine (`src/sound.c`, `src/sound_data.h`)**:
    - Uses embedded `SceAudioOut` stereo playback at 44.1 kHz.

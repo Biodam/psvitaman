@@ -184,16 +184,24 @@ static void* worker_thread_func(void *argp)
             uint64_t now = get_time_ms();
 
 #if defined(__psp2__) || defined(__VITA__)
-            /* Check Wi-Fi state */
-            int net_state = 0;
-            int ctl_res = sceNetCtlInetGetState(&net_state);
-            LOG_INFO("Worker Wi-Fi status check: result=%d, state=%d", ctl_res, net_state);
-            if (ctl_res >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
-                error_set(APP_ERR_WIFI_DISCONNECTED, "Wi-Fi Disconnected",
-                          "PS Vita is not connected to a Wi-Fi network. Please check Vita Settings.",
-                          "Press [X] to dismiss");
-                sleep_ms(2000);
-                continue;
+            /* Check Wi-Fi state every 3 seconds without spamming logs */
+            static uint64_t s_last_wifi_check_tick = 0;
+            static int s_last_net_state = SCE_NETCTL_STATE_CONNECTED;
+            if (now - s_last_wifi_check_tick >= 3000) {
+                s_last_wifi_check_tick = now;
+                int net_state = 0;
+                int ctl_res = sceNetCtlInetGetState(&net_state);
+                if (ctl_res >= 0 && net_state != s_last_net_state) {
+                    LOG_INFO("Wi-Fi connection state changed: %d -> %d", s_last_net_state, net_state);
+                    s_last_net_state = net_state;
+                }
+                if (ctl_res >= 0 && net_state != SCE_NETCTL_STATE_CONNECTED) {
+                    error_set(APP_ERR_WIFI_DISCONNECTED, "Wi-Fi Disconnected",
+                              "PS Vita is not connected to a Wi-Fi network. Please check Vita Settings.",
+                              "Press [X] to dismiss");
+                    sleep_ms(2000);
+                    continue;
+                }
             }
 #endif
 

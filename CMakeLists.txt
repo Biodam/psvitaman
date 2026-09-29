@@ -137,6 +137,7 @@ target_link_libraries(psvitaman
   ScePower_stub
   SceMotion_stub
   SceAudio_stub
+  SceAVConfig_stub
 )
 
 vita_create_self(eboot.bin psvitaman UNSAFE)

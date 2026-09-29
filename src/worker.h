@@ -18,6 +18,7 @@ typedef enum {
     CMD_SKIP_PREV,
     CMD_VOLUME_UP,
     CMD_VOLUME_DOWN,
+    CMD_SET_VOLUME,
     CMD_TOGGLE_SHUFFLE,
     CMD_CYCLE_REPEAT,
     CMD_FORCE_REFRESH
@@ -31,6 +32,9 @@ void worker_stop(void);
 
 /* Enqueue a command from the UI/Input thread */
 bool worker_enqueue_command(WorkerCommand cmd);
+
+/* Explicitly set volume percentage (0..100) with request coalescing */
+bool worker_set_volume(int volume_percent);
 
 /* Get snapshot of current playback state + smooth interpolated progress */
 void worker_get_playback_state(SpotifyPlaybackState *out_state, int *out_interpolated_progress_ms);

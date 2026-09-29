@@ -28,10 +28,14 @@
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
 #include <psp2/ctrl.h>
+#include <psp2/avconfig.h>
 #include <vita2d.h>
 
 #define NET_INIT_SIZE (1 * 1024 * 1024)
 static char s_net_memory[NET_INIT_SIZE];
+static int s_last_sys_vol = -1;
+static int s_last_applied_spot_vol = -1;
+static uint64_t s_vol_sync_ignore_tick = 0;
 #endif
 
 int main(int argc, char *argv[]) {
@@ -49,6 +53,7 @@ int main(int argc, char *argv[]) {
     /* 2. Load System Modules */
     sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
     sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_AVCONFIG);
 
     /* 3. Initialize SceNet Stack */
     SceNetInitParam net_param;
@@ -219,10 +224,30 @@ int main(int argc, char *argv[]) {
                 if (input.pressed_buttons & SCE_CTRL_UP) {
                     worker_enqueue_command(CMD_VOLUME_UP);
                     sound_play(SOUND_CLICK);
+#if defined(__psp2__) || defined(__VITA__)
+                    int next_spot = s_last_applied_spot_vol + 5;
+                    if (next_spot > 100) next_spot = 100;
+                    int v = (int)((next_spot * 30.0f / 100.0f) + 0.5f);
+                    if (v > 30) v = 30;
+                    sceAVConfigSetSystemVol(v);
+                    s_last_sys_vol = v;
+                    s_last_applied_spot_vol = next_spot;
+                    s_vol_sync_ignore_tick = sceKernelGetProcessTimeWide() / 1000;
+#endif
                 }
                 if (input.pressed_buttons & SCE_CTRL_DOWN) {
                     worker_enqueue_command(CMD_VOLUME_DOWN);
                     sound_play(SOUND_CLICK);
+#if defined(__psp2__) || defined(__VITA__)
+                    int next_spot = s_last_applied_spot_vol - 5;
+                    if (next_spot < 0) next_spot = 0;
+                    int v = (int)((next_spot * 30.0f / 100.0f) + 0.5f);
+                    if (v < 0) v = 0;
+                    sceAVConfigSetSystemVol(v);
+                    s_last_sys_vol = v;
+                    s_last_applied_spot_vol = next_spot;
+                    s_vol_sync_ignore_tick = sceKernelGetProcessTimeWide() / 1000;
+#endif
                 }
                 if (input.pressed_buttons & SCE_CTRL_START) {
                     worker_enqueue_command(CMD_FORCE_REFRESH);
@@ -286,6 +311,48 @@ int main(int argc, char *argv[]) {
             memset(&playback, 0, sizeof(playback));
         }
 
+#if defined(__psp2__) || defined(__VITA__)
+        /* Hardware Volume Key & Spotify Bidirectional Volume Sync */
+        if (config.is_valid && worker_is_authenticated()) {
+            uint64_t now_ms = sceKernelGetProcessTimeWide() / 1000;
+            int current_sys_vol = -1;
+
+            if (sceAVConfigGetSystemVol(&current_sys_vol) == 0 && current_sys_vol >= 0) {
+                if (s_last_sys_vol < 0) {
+                    /* Initial sync on startup / authentication */
+                    s_last_sys_vol = current_sys_vol;
+                    s_last_applied_spot_vol = playback.volume_percent;
+                } else if (current_sys_vol != s_last_sys_vol) {
+                    /* Direction 1: User pressed physical PS Vita Volume Up / Down hardware buttons! */
+                    s_last_sys_vol = current_sys_vol;
+                    int target_spot_vol = (int)((current_sys_vol * 100.0f / 30.0f) + 0.5f);
+                    if (target_spot_vol < 0) target_spot_vol = 0;
+                    if (target_spot_vol > 100) target_spot_vol = 100;
+
+                    s_last_applied_spot_vol = target_spot_vol;
+                    s_vol_sync_ignore_tick = now_ms;
+                    worker_set_volume(target_spot_vol);
+                    sound_play(SOUND_CLICK);
+                    LOG_INFO("Hardware Volume button pressed: sys=%d/30 -> spotify=%d%%", current_sys_vol, target_spot_vol);
+                } else if (now_ms - s_vol_sync_ignore_tick >= 2000 &&
+                           playback.volume_percent >= 0 &&
+                           playback.volume_percent != s_last_applied_spot_vol) {
+                    /* Direction 2: Spotify volume changed externally (phone / desktop / connect) */
+                    int target_sys_vol = (int)((playback.volume_percent * 30.0f / 100.0f) + 0.5f);
+                    if (target_sys_vol < 0) target_sys_vol = 0;
+                    if (target_sys_vol > 30) target_sys_vol = 30;
+
+                    if (target_sys_vol != s_last_sys_vol) {
+                        LOG_INFO("External Spotify volume changed: spotify=%d%% -> sys=%d/30", playback.volume_percent, target_sys_vol);
+                        sceAVConfigSetSystemVol(target_sys_vol);
+                        s_last_sys_vol = target_sys_vol;
+                    }
+                    s_last_applied_spot_vol = playback.volume_percent;
+                }
+            }
+        }
+#endif
+
         /* Update animations & physics */
         ui_update(dt, &playback, interpolated_progress_ms);
 
@@ -313,6 +380,7 @@ int main(int argc, char *argv[]) {
     vita2d_fini();
     sceNetCtlTerm();
     sceNetTerm();
+    sceSysmoduleUnloadModule(SCE_SYSMODULE_AVCONFIG);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
     sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
     sceKernelExitProcess(0);

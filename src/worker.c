@@ -178,21 +178,15 @@ bool worker_enqueue_command(WorkerCommand cmd) {
         case CMD_VOLUME_UP: {
             int v = g_playback_state.volume_percent + 5;
             if (v > 100) v = 100;
-            g_playback_state.volume_percent = v;
-            s_volume_override_val = v;
-            s_volume_override_tick = now;
-            item.int_val = v;
-            break;
+            unlock_mutex();
+            return worker_set_volume(v);
         }
 
         case CMD_VOLUME_DOWN: {
             int v = g_playback_state.volume_percent - 5;
             if (v < 0) v = 0;
-            g_playback_state.volume_percent = v;
-            s_volume_override_val = v;
-            s_volume_override_tick = now;
-            item.int_val = v;
-            break;
+            unlock_mutex();
+            return worker_set_volume(v);
         }
 
         case CMD_SKIP_NEXT:
@@ -201,6 +195,48 @@ bool worker_enqueue_command(WorkerCommand cmd) {
         default:
             break;
     }
+
+    g_cmd_queue[g_cmd_tail] = item;
+    g_cmd_tail = next_tail;
+    unlock_mutex();
+    return true;
+}
+
+bool worker_set_volume(int volume_percent) {
+    if (volume_percent < 0) volume_percent = 0;
+    if (volume_percent > 100) volume_percent = 100;
+
+    lock_mutex();
+    uint64_t now = get_time_ms();
+
+    /* Immediately mutate optimistic state */
+    g_playback_state.volume_percent = volume_percent;
+    s_volume_override_val = volume_percent;
+    s_volume_override_tick = now;
+
+    /* Check if the most recent unconsumed item in the queue is already a volume command */
+    if (g_cmd_head != g_cmd_tail) {
+        int prev_idx = (g_cmd_tail - 1 + CMD_QUEUE_SIZE) % CMD_QUEUE_SIZE;
+        if (g_cmd_queue[prev_idx].type == CMD_SET_VOLUME ||
+            g_cmd_queue[prev_idx].type == CMD_VOLUME_UP ||
+            g_cmd_queue[prev_idx].type == CMD_VOLUME_DOWN) {
+            /* Coalesce: update target volume in place without spamming redundant HTTP requests */
+            g_cmd_queue[prev_idx].type = CMD_SET_VOLUME;
+            g_cmd_queue[prev_idx].int_val = volume_percent;
+            unlock_mutex();
+            return true;
+        }
+    }
+
+    int next_tail = (g_cmd_tail + 1) % CMD_QUEUE_SIZE;
+    if (next_tail == g_cmd_head) {
+        unlock_mutex();
+        return false;
+    }
+
+    WorkerQueueItem item;
+    item.type = CMD_SET_VOLUME;
+    item.int_val = volume_percent;
 
     g_cmd_queue[g_cmd_tail] = item;
     g_cmd_tail = next_tail;
@@ -242,6 +278,7 @@ static void handle_command(WorkerQueueItem item, const char *token) {
 
         case CMD_VOLUME_UP:
         case CMD_VOLUME_DOWN:
+        case CMD_SET_VOLUME:
             spotify_set_volume(token, item.int_val);
             break;
 
